@@ -1,0 +1,323 @@
+---
+title: "Blackbird Demo for Waldemar"
+author: "R. Chlumsky"
+date: "November 2025"
+output: pdf_document
+urlcolor: blue
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Blackbird Demo for Waldemar
+
+This vignette is provided as a demo workflow of how a model can be built with Blackbird. In this example, bathymetry data is already integrated into the DEM directly.
+
+Load relevant libraries.
+
+```{r load blackbird library}
+library(blackbird)
+library(raster)
+library(sf)
+library(whitebox)
+library(dplyr)
+library(terra)
+library(qgisprocess)
+library(lwgeom)
+library(ggplot2)
+library(tictoc)
+
+workingfolder <- "waldemarworking2"
+modelname="waldemar"
+```
+
+Bring in dem, roughness, and river line files.
+
+```{r bring in sample data}
+
+dem <- terra::rast(system.file("extdata/Waldemar_dtm_integrated_30m.tif", package="blackbird"))
+manningsn <- terra::rast(system.file("extdata/Waldemar_landcover2017_40m.tif", package="blackbird"))
+
+dem <- bb_preprocess_dem(dem=dem, workingfolder=workingfolder, return_raster=TRUE)
+manningsn <- bb_preprocess_manningsn(manningsn,workingfolder = workingfolder)
+```
+
+Setup Blackbird options.
+
+```{r build Blackbird options}
+# setup model options
+bbopt <- bb_options() # use default bb_options values
+
+# save workingfolder in bbopt for convenience
+bbopt$workingfolder <- workingfolder
+bbopt$get_defaults() # use dem info to set more defaults
+bbopt$use_preproc <- TRUE
+bbopt$tolerance_cp
+
+bbopt$tolerance_nd <- 0.003
+bbopt$interp_extraplotion_method <- "extrapolate"
+bbopt$Manning_composite_method <- "weighted_average_area"
+bbopt$flooded_cell_method <- "simple"
+bbopt$friction_slope_method <- "average_conveyance"
+
+bbopt$Manning_composite_method
+bbopt$catchment_conveyance_method
+bbopt$xsection_conveyance_method
+bbopt$catchment_integration_method
+
+# save workingfolder in bbopt for convenience
+bbopt$workingfolder <- workingfolder
+
+# use 20cm resolution for preprocessing
+bbopt$Hseq <- seq(0,9,0.2)
+bbopt$use_dhand <- FALSE
+```
+
+Generate a rivershp using bb_preprocess_generate_rivershp. You can also manually modify the rivershp once created to meet your project needs.
+
+```{r Generate a rivershp}
+# outlet <- "./inst/extdata/Waldemar_outlet.shp" # outlet should align with flow accumulation raster
+outlet <- system.file("extdata/Waldemar_outlet.gpkg", package="blackbird")
+# Write gpkg to shapefile for function
+tf <- tempfile(fileext=".shp")
+write_sf(read_sf(outlet),tf)
+bb_preprocess_generate_rivershp(bbopt, outlet=tf,
+                        outlet_snap_dist=30, flowacc_threshold=5e3,
+                        min_segment_length=500, river_snap_dist=60,
+                        simplify_reaches=TRUE,
+                        return_shp=FALSE,
+                        clip_to_catchment = TRUE)
+```
+
+View dem and rivershp
+```{r plot initial dem and river shapefile}
+dem <- bb_get_demraster(workingfolder=workingfolder, returnobject = TRUE)
+rivershp <- bb_get_rivershp(workingfolder=workingfolder, returnobject = TRUE)
+
+plot(dem)
+plot(rivershp$geometry, add=TRUE, col='blue', lwd=2)
+```
+
+Initial data to preprocess
+
+```{r preprocess HAND raster}
+
+# setup defaults in bbopt based on initial dem file
+# bbopt$get_defaults()
+# bbopt$sample_linepoints_dist
+# bbopt$removesinks_dist
+# bbopt$pourpoint_snap_dist
+
+# process slope (used in bed slope calculation)
+bb_preprocess_slope(bbopt$workingfolder)
+
+# calculate HAND
+# set sample linepoints dist to some mulitple of demres for best results
+bb_preprocess_hand(bbopt=bbopt, overwrite = TRUE, 
+         removesinks_method="breach_leastcost", return_raster=FALSE) 
+```
+
+Show HAND raster.
+
+```{r plot new hand raster}
+hand_raster <- bb_get_handraster(workingfolder=workingfolder, returnobject = TRUE)
+rivershp <- bb_get_rivershp(workingfolder = workingfolder, returnobject = TRUE)
+
+plot(hand_raster)
+plot(rivershp$geometry, add=TRUE, col='blue', lty=1, lwd=2)
+```
+
+
+Generate catchments for streamnodes (~300m apart)
+
+```{r delineate streamnode catchments}
+rivershp <- bb_get_rivershp(workingfolder)
+
+bbopt$pourpoint_snap_dist <- 30 # should ensure this is less than min_end_offset
+
+# sample points along river with equal spacing for catchments
+bb_sample_streamnodes_fromreaches(lineshp=rivershp, bbopt=bbopt, pointdist=300, 
+                                           lastpoint=TRUE, firstpoint=TRUE, min_end_offset=bbopt$pourpoint_snap_dist+60,
+                                           reachID_col="reachID", downID_col = "downID")
+
+streamnodes <- bb_get_streamnodesforcatchmentsshp(workingfolder,returnobject = TRUE)
+
+# check for duplicate geometries
+streamnodes %>% sf::st_geometry() %>% anyDuplicated()
+
+nrow(streamnodes)
+head(streamnodes)
+
+plot(rivershp$geometry)
+plot(streamnodes$geometry, add=TRUE, col='blue')
+
+# computes downid for streamnodes network, generates snapped streamnodes
+bb_preprocess_streamnodes_forcatchments(bbopt=bbopt, return_shp = FALSE)
+
+bb_preprocess_catchments_sf(bbopt=bbopt,
+                            check_partial_river=TRUE, # TRUE for most cases beyond testing res
+                            check_edges_only=TRUE,
+                            remove_partial_catchments = TRUE,
+                            remove_short_edges=TRUE)
+
+# plot results
+catchments_streamnodes <- bb_get_catchmentsfromstreamnodesshp(workingfolder)
+streamnodes <- bb_get_snappedstreamnodesforcatchmentsshp(workingfolder,returnobject = TRUE)
+plot(catchments_streamnodes$geometry)
+plot(streamnodes$geometry, col='red', add=TRUE)
+plot(rivershp$geometry, add=TRUE, col='blue')
+```
+
+Calculate reach length raster (used in computing effective reach length with stage).
+
+```{r compute reach length raster}
+bb_preprocess_reach_lengths(workingfolder = bbopt$workingfolder, dE = 5.0)
+
+# plot if desired
+bb_get_reachlengthraster(workingfolder = bbopt$workingfolder, returnobject = TRUE) %>% plot()
+```
+
+Build our model geometry object.
+
+```{r build geometry object}
+# Convert the catchment shapefiles to class objects in blackbird
+catchmentList <- bb_preprocess_catchments_streamnodes(bbopt=bbopt)
+
+rivershp <- bb_get_rivershp(returnobject = TRUE,workingfolder = workingfolder)
+myriverreachList <- bb_preprocess_riverreachlist(workingfolder = workingfolder)
+
+gg <- blackbird::bb_geometry$new(geomname="Waldemar",
+                           streamnodeList=catchmentList,
+                           rivershp=bb_get_rivershp(workingfolder),
+                           riverreachList = myriverreachList)
+
+```
+
+Define boundary conditions, pre-process the geometry, and create our flow inputs.
+
+```{r compute hydraulic profiles for catchment-based streamnodes}
+
+# set boundary condition at downstream reach with default conditions
+bcc <- bb_preprocess_default_boundarycondition(geometry = gg)
+
+# update geometry reach lengths (needs to be updated for network)
+gg$compute_reach_lengths()
+
+# update minimum elevations in streamnodes (cross-sections)
+gg$compute_min_elevations_all(confine_to_bankstations=FALSE)
+
+# calculate bed slopes for each catchment (important in hand-manning method)
+gg$compute_bed_slope_all()
+
+# view geometry properties in sdf
+sdf <- gg$get_streamnodeList_as_dataframe()
+
+# check conveyance method before proceeding
+bbopt$catchment_conveyance_method 
+bbopt$Manning_composite_method 
+bbopt$modeltype
+```
+
+Run the geometry preprocessing for HAND (used in HAND-Manning runs)
+```{r geometry preprocessing (HAND based)}
+bbopt$Hseq <- seq(0,9,0.2) # 20cm resolution
+length(bbopt$Hseq)
+
+bbopt$Hseq
+bbopt$dhand_Hseq
+bbopt$use_dhand
+
+# compute geometry pre-processing tables (potentially long processing time)
+tic()
+gg$compute_preprocessing_tables(bbopt=bbopt)
+toc()
+
+## peek at properties table
+gg$streamnodeList[[12]]$depthdf[,colnames(gg$streamnodeList[[12]]$depthdf) %>% grep("K_",.)]
+
+# write preprocessed hydraulic tables to file
+gg$write_preprocessed_depthdf(bbopt,modelname="waldemarworking_hand")
+
+# optional - read in preprocessed tables from file
+# gg$read_preprocessed_depthdf(bbopt = bbopt,modelname = "waldemarworking_hand")
+# gg$streamnodeList[[10]]$depthdf$Depth
+```
+
+Generate the flows to run through the model using defined flows.
+```{r Generate the flows}
+
+sdf <- gg$get_streamnodeList_as_dataframe()
+sdf$flowprofile1 <- 500
+sdf[sdf$reachID==1,]$flowprofile1 <- 50   # small trib
+sdf[sdf$reachID==3,]$flowprofile1 <- 450  # upstream Grand River
+
+flowdf <- sdf[,c("nodeID","flowprofile1")]
+
+fplist <- blackbird::bb_flowprofile(profiletype="steady",
+                                         flowdf=flowdf)
+```
+
+Merge into the model class.
+```{r merge into one model class}
+
+# merge into one Blackbird model class
+bbmodel <- bb_model(
+      bbopt=bbopt,
+      bbgeo=gg,
+      bbfp=fplist,
+      bbbc=bcc
+)
+```
+
+
+## Results - Blackbird with HAND
+
+Set the model solution type (here as steadyflow, indicating that we are running 1D hydraulic model calcs)
+Note - need to set bbmodel type and geometry to the HAND values here
+
+```{r run results - steadyflow discretized_calc}
+bb_get_modeltypes()
+bbmodel$bbopt$modeltype <- "steadyflow"
+bbmodel$bbopt$modeltype
+
+# conveyance calculation
+bb_get_catchment_conveyance_methods()
+bbmodel$bbopt$catchment_conveyance_method <- "discretized_conveyance"
+bbmodel$bbopt$Manning_composite_method <- "equal_velocity"
+
+# multiplier
+bbmodel$bbopt$roughness_multiplier <- 1.0
+
+# update properties and run model
+bbmodel$bbgeo$update_preproc_tables_bymethod(bbopt = bbmodel$bbopt)
+hydraulic_output <- blackbird::bb_hyd_compute_profile(bbmodel=bbmodel,update_preproc_tables = FALSE) # set update to FALSE, done manually
+
+# check that no depths are outside of the Hseq range ultimately
+hydraulic_output$Depth
+any(hydraulic_output$Depth >8) # FALSE, so safe in extrapolation
+any(hydraulic_output$Depth > max(bbmodel$bbopt$Hseq))
+
+```
+
+Interpolate and create flood maps
+```{r interpolate and map results - steadyflow discretized_calc with simple catchment-HAND interpolation}
+
+# set interpolation post-proc method
+bb_get_interp_postproc_methods()
+bbmodel$bbopt$interpolation_postproc_method
+
+bbmodel$bbopt$interpolation_postproc_method <- "catchment-hand"
+rr <- bb_postprocess_floodresults(bbmodel,hydraulic_output,overwrite = TRUE,write_raster = TRUE, return_raster = TRUE) 
+
+plot(rr)
+```
+
+Write out the model files for the compiled executable program to use.
+```{r write model files for compiled program}
+
+bb_write_model_files_cpp("Waldemar",bbmodel)
+```
+

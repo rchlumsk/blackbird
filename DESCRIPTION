@@ -1,0 +1,42 @@
+Package: blackbird
+Type: Package
+Title: Flood Mapping Utilities and Hydraulic Calculations
+Version: 1.0.0
+Authors@R: c(
+    person("Robert", "Chlumsky", email = "robert.chlumsky@heronhydrologic.ca", role = c("cre","aut"), comment = c(ORCID = "0000-0002-1303-5064")),
+    person("Brian", "Peng", email = "brian.peng@heronhydrologic.ca", role = c("ctb","aut"), comment = c(ORCID = "0000-0003-2715-7166")),
+    person("James", "Craig", email = "jrcraig@uwaterloo.ca", role = c("aut"), comment = c(ORCID = "0000-0003-2715-7166")),
+    person("Bryan", "Tolson", email = "btolson@uwaterloo.ca", role = c("aut"), comment = c(ORCID = "0000-0002-3092-5536")))
+Maintainer: Robert Chlumsky <robert.chlumsky@heronhydrologic.ca>
+Description: This package supports the calculation of dynamic floodplain maps.
+    The package includes utilities for pre-processing Digital Elevation Models (DEMs) for watershed delineation and 
+    Height Above Nearest Drainage (HAND) based calculations. The package also includes tools for replicating the standard-step
+    approach to 1-D hydraulic calculations, and novel tools for combining the HAND method with the standard-step hydraulic calculations
+    in order to produce more accurate floodplain maps.
+Note: Package is in active development; please report errors and suggestions to maintainer.
+Depends:
+    R (>= 4.0.0)
+Imports: 
+    doParallel,
+    dplyr,
+    exactextractr,
+    ggplot2,
+    igraph,
+    leaflet,
+    lwgeom,
+    magrittr,
+    parallel,
+    qgisprocess (>= 0.4.1),
+    terra (>= 1.7-55),
+    raster (>= 3.6-26),
+    Rcpp (>= 1.0.11),
+    rjson,
+    sf (>= 1.0-21),
+    sp (>= 2.1-1),
+    whitebox (>= 2.4.3)
+License: GPL-3 | file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
+VignetteBuilder: knitr
+LinkingTo: Rcpp

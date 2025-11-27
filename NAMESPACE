@@ -1,0 +1,5 @@
+exportPattern("^[[:alpha:]]+")
+export("%notin%")
+importFrom(Rcpp,sourceCpp)
+importFrom(Rcpp,evalCpp)
+useDynLib(blackbird, .registration=TRUE)

@@ -1,0 +1,9 @@
+The 30m DEM file (Waldemar_dtm_integrated_30m.tiff) was constructed using the SWOOP2020 dataset as well as bathymetry data from the GRCA, then re-exported to a 30m resolution, and is subject to the following license agreements:
+
+- Contains information licensed under the Open Government Licence – Ontario”. See Open Government Licence (https://www.ontario.ca/page/open-government-licence-ontario).
+- Contains Information made available under Grand River Conservation Authority’s Open Data Licence v2.0. 
+
+The land cover and manning's roughness file (Waldemar_landcover2017_40m.tif) is also derived from the 2017 Land Cover dataset provided by the Grand River Conservation Authority, and is covered under the Grand River Conservation Authority’s Open Data Licence v2.0. 
+
+Any other data files are covered under the package license agreement terms.
+ 
