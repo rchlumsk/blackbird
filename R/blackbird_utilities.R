@@ -3032,75 +3032,6 @@ bb_get_results_raster <- function(workingfolder, returnobject=TRUE, include_wf=T
   return(result)
 }
 
-
-#' #' @title Write sf objects to geojson format
-#' #'
-#' #' @description
-#' #' Writes sf object to geojson format at the specified output location
-#' #'
-#' #' @details
-#' #' All functions use the function \code{bb_get_object} to retrieve files/objects.
-#' #' Same files names are used though with the geojson extension.
-#' #'
-#' #' @param workingfolder the working folder where the file should be found
-#' #' @param outputfolder folder where the file should be written to (defaults to \code{<workingfolder>}/model/GIS_files)
-#' #'
-#' #' @return Returns \code{TRUE} if written successfully
-#' #'
-#' #' @name bb_write_geojson
-#'
-#' #' @importFrom sf st_write
-#' #' @export
-#' bb_write_geojson <- function(objectname=NULL, workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
-#'
-#'   if (is.null(objectname)) {
-#'     stop("objectname is required")
-#'   }
-#'
-#'   if (is.null(workingfolder)) {
-#'     stop("Cannot retrieve files when workingfolder is NULL")
-#'   }
-#'
-#'   df <- bb_get_fileinfo(objectname)
-#'   if (is.null(df)) {
-#'     stop(sprintf("%s not recognized as objectname in bb_get_fileinfo",objectname))
-#'   }
-#'
-#'   # check that file exists
-#'   if (include_wf) {
-#'     tf <- file.path(workingfolder, df$filename)
-#'   } else {
-#'     tf <- df$filename
-#'   }
-#'
-#'   result <- tf
-#'
-#'   if (!is.null(result)) {
-#'     if (returnobject) {
-#'
-#'       if (!file.exists(result)) {
-#'         warning(sprintf("%s not found in file path %s, returning NULL",objectname,tf))
-#'         result <- NULL
-#'       } else {
-#'         if (df$filetype == "SpatRaster") {
-#'           result <- terra::rast(tf)
-#'           # result <- raster::raster(tf)
-#'         } else if (df$filetype == "sf") {
-#'           result <- read_sf(tf)
-#'         } else if (df$filetype == "csv") {
-#'           result <- read.csv(tf)
-#'         } else if (df$filetype == "rds") {
-#'           result <- readRDS(tf)
-#'         } else {
-#'           warning(sprintf("unrecognized file type %s, returning NULL",df$filetype))
-#'           result <- NULL
-#'         }
-#'       }
-#'     }
-#'   }
-#'   return(result)
-#' }
-
 #' @title Write sf objects to geojson format
 #'
 #' @description
@@ -3117,7 +3048,7 @@ bb_get_results_raster <- function(workingfolder, returnobject=TRUE, include_wf=T
 #' @return Returns \code{TRUE} if written successfully
 #'
 #' @name bb_write_geojson
-bb_write_geojson <- function(ss=NULL, bbopt=NULL, filename=NULL) {
+bb_write_geojson <- function(ss=NULL, bbopt=NULL, filename=NULL, outputfolder=NULL) {
   if (is.null(ss)) {stop("ss is required, may be NULL")}
   if (is.null(bbopt)) {stop("bbopt is required")}
   if (is.null(filename)) {stop("filename is required")}
@@ -3137,7 +3068,7 @@ bb_write_geojson <- function(ss=NULL, bbopt=NULL, filename=NULL) {
 bb_write_rivershp_geojson <- function(bbopt=NULL,outputfolder=NULL) {
   if (is.null(bbopt)) {stop("bbopt is required")}
   ss <- bb_get_rivershp(bbopt$workingfolder)
-  bb_write_geojson(ss,bbopt,"bb_rivershp")
+  bb_write_geojson(ss,bbopt,"bb_rivershp",outputfolder)
   return(TRUE)
 }
 
@@ -3146,7 +3077,7 @@ bb_write_rivershp_geojson <- function(bbopt=NULL,outputfolder=NULL) {
 bb_write_snappedstreamnodes_geojson <- function(bbopt=NULL,outputfolder=NULL) {
   if (is.null(bbopt)) {stop("bbopt is required")}
   ss <- bb_get_snappedstreamnodesforcatchmentsshp(bbopt$workingfolder)
-  bb_write_geojson(ss,bbopt,"bb_snapped_streamnodes_forcatchments")
+  bb_write_geojson(ss,bbopt,"bb_snapped_streamnodes_forcatchments",outputfolder)
   return(TRUE)
 }
 
@@ -3155,7 +3086,7 @@ bb_write_snappedstreamnodes_geojson <- function(bbopt=NULL,outputfolder=NULL) {
 bb_write_xsections_geojson <- function(bbopt=NULL,outputfolder=NULL) {
   if (is.null(bbopt)) {stop("bbopt is required")}
   ss <- bb_get_xsectionsfromstreamnodesshp(bbopt$workingfolder)
-  bb_write_geojson(ss,bbopt,"bb_xsections_fromstreamnodes")
+  bb_write_geojson(ss,bbopt,"bb_xsections_fromstreamnodes",outputfolder)
   return(TRUE)
 }
 
@@ -3166,7 +3097,7 @@ bb_write_catchmentstreamnodes_geojson <- function(bbopt=NULL,outputfolder=NULL, 
   ss <- bb_get_catchmentsfromstreamnodesshp(bbopt$workingfolder)
 
   if (!include_results) {
-    bb_write_geojson(ss,bbopt,"bb_catchments_fromstreamnodes")
+    bb_write_geojson(ss,bbopt,"bb_catchments_fromstreamnodes",outputfolder)
   } else {
 
     if (is.null(hydraulic_output)) {
@@ -3185,7 +3116,7 @@ bb_write_catchmentstreamnodes_geojson <- function(bbopt=NULL,outputfolder=NULL, 
       ss <- left_join(ss,hydraulic_output,by="pointid")
     }
 
-    bb_write_geojson(ss,bbopt,"bb_catchments_fromstreamnodes")
+    bb_write_geojson(ss,bbopt,"bb_catchments_fromstreamnodes",outputfolder)
   }
 
   return(TRUE)
@@ -3853,4 +3784,5 @@ bb_preprocess_parellel_minelev <- function(bbgeom=NULL, bbopt=NULL) {
 
   return(TRUE)
 }
+
 
