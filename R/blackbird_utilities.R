@@ -3533,9 +3533,9 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
 #' Other parameters and various outputs as per function usage.
 #'
 #' @name bb_support
-energy_calc <- function(Z,y,v,g=9.81) {
+energy_calc <- function(Z,y,v,alpha,g=9.81) {
   # total energy in the channel
-  return(Z+y+v^2/2/g)
+  return(Z+y+v^2/2/g*alpha)
 }
 
 #' @rdname bb_support
@@ -3618,6 +3618,7 @@ total_energy <- function(mm,i,bbopt) {
   te <- energy_calc(Z=mm[i,]$Min_Elev,
                     y=mm[i,]$Depth,
                     v=mm[i,]$Velocity,
+                    alpha=mm[i,]$alpha,
                     g=bbopt$g)
   return(te)
 }
