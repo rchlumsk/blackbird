@@ -44,6 +44,10 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   fc <- file(outputfile,open='w+')
   sdf <- geometry$get_streamnodeList_as_dataframe()
 
+  # replace sdf$nodetype here for writing
+  sdf[sdf$nodetype == "catchment",]$nodetype <- "REACH"
+  sdf[sdf$nodetype == "xsection",]$nodetype <- "XSECTION"
+
   writeLines("## Blackbird Geometry File (.bbg)",fc)
   writeLines("# \n",fc)
 
@@ -150,8 +154,8 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   # writeLines(sprintf(":ModelName %s",modelname), fc)
 
   writeLines("### General Model Setup Options ----", fc)
-  writeLines(sprintf(":ModelType %s",bbopt$modeltype), fc)
-  writeLines(sprintf(":RegimeType %s",bbopt$regimetype), fc)
+  writeLines(sprintf(":ModelType %s",toupper(bbopt$modeltype)), fc)
+  writeLines(sprintf(":RegimeType %s",toupper(bbopt$regimetype)), fc)
   # writeLines(sprintf(":gravity %s",bbopt$g), fc)
   # writeLines(paste(c(":Hseq", bbopt$Hseq), collapse=" "), fc)
   writeLines(sprintf(":Tolerance %s",bbopt$tolerance_cp), fc)
@@ -170,10 +174,10 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   }
   writeLines(sprintf(":NumExtrapolationPoints %s",bbopt$num_extrapolation_points), fc)
   # writeLines(sprintf(":DynamicHAND %s",bbopt$use_dhand), fc)
-  writeLines(sprintf(":FrictionSlopeMethod %s",bbopt$friction_slope_method), fc)
+  writeLines(sprintf(":FrictionSlopeMethod %s",toupper(bbopt$friction_slope_method)), fc)
   writeLines(sprintf(":EnforceDeltaLeff %s",bbopt$enforce_delta_Leff), fc)
   writeLines(sprintf(":ReachLengthDelta %s",bbopt$delta_reachlength), fc)
-  writeLines(sprintf(":ManningCompositeMethod %s",bbopt$Manning_composite_method), fc)
+  writeLines(sprintf(":ManningCompositeMethod %s",toupper(bbopt$Manning_composite_method)), fc)
   writeLines(sprintf(":SilentRun %s",bbopt$silent_cp), fc)  # update to merge silent_cp, silent_nd
   writeLines(sprintf(":FroudeThreshold %.4f",bbopt$Froude_threshold), fc)
 
@@ -183,15 +187,15 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   writeLines("\n### XSection Specific Options ----", fc)
   writeLines(sprintf(":XSectionDX %s",bbopt$dx), fc)
   writeLines(sprintf(":UseOverbankCalcs %s",bbopt$xs_use_obcalcs), fc)
-  writeLines(sprintf(":XSectionConveyanceMethod %s",bbopt$xsection_conveyance_method), fc)
+  writeLines(sprintf(":XSectionConveyanceMethod %s",toupper(bbopt$xsection_conveyance_method)), fc)
   writeLines(sprintf(":ManningEnforceValues %s",bbopt$Manning_enforce_values), fc)
 
   writeLines("\n### Reach Specific Options ----", fc)
-  writeLines(sprintf(":ReachConveyanceMethod %s",bbopt$catchment_conveyance_method), fc)
-  writeLines(sprintf(":ReachIntegrationMethod %s",bbopt$catchment_integration_method), fc)
+  writeLines(sprintf(":ReachConveyanceMethod %s",toupper(bbopt$catchment_conveyance_method)), fc)
+  writeLines(sprintf(":ReachIntegrationMethod %s",toupper(bbopt$catchment_integration_method)), fc)
 
   writeLines("\n### PostProcessing Options ----", fc)
-  writeLines(sprintf(":PostprocessingInterpolationMethod %s",bbopt$interpolation_postproc_method), fc)
+  writeLines(sprintf(":PostprocessingInterpolationMethod %s",gsub("-","_",toupper(bbopt$interpolation_postproc_method))), fc)
   writeLines(":GISPath GIS_files", fc)
 
   close(fc)
