@@ -10,6 +10,7 @@
 #' @param workingfolder workingfolder
 #' @param modelname prefix for model file names
 #' @param bbmodel blackbird model object to write
+#' @param snconndf dataframe of connections between streamnodes with minimum hand values defined
 #'
 #' @return {returns \code{TRUE} if run successfully}
 #
@@ -20,7 +21,7 @@
 #' @importFrom raster raster writeRaster crs
 #' @export bb_write_model_files_cpp
 bb_write_model_files_cpp <- function(modelname="modelname",
-                                 bbmodel=NULL) {
+                                 bbmodel=NULL, snconndf=NULL) {
 
   if (is.null(bbmodel)) {stop("bbmodel is required")}
 
@@ -45,8 +46,12 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   sdf <- geometry$get_streamnodeList_as_dataframe()
 
   # replace sdf$nodetype here for writing
-  sdf[sdf$nodetype == "catchment",]$nodetype <- "REACH"
-  sdf[sdf$nodetype == "xsection",]$nodetype <- "XSECTION"
+  if (any(sdf$nodetype == "catchment")) {
+    sdf[sdf$nodetype == "catchment",]$nodetype <- "REACH"
+  }
+  if (any(sdf$nodetype == "xsection")) {
+    sdf[sdf$nodetype == "xsection",]$nodetype <- "XSECTION"
+  }
 
   writeLines("## Blackbird Geometry File (.bbg)",fc)
   writeLines("# \n",fc)
@@ -97,7 +102,32 @@ bb_write_model_files_cpp <- function(modelname="modelname",
 
   # add in the redirect
   writeLines(sprintf("\n:RedirectToFile %s_reaches.bbg",modelname), fc)
+
+  # check if sbconndf provided
+  if (!is.null(sbconndf)) {
+    writeLines(sprintf("\n:RedirectToFile %s_streamnodeconnections.bbg",modelname), fc)
+  }
+
   close(fc)
+
+  # write sbconndf if not null
+  if (!is.null(sbconndf)) {
+      outputfile <- file.path(workingfolder,"model",sprintf("%s_streamnodeconnections.bbg",modelname))
+      fc <- file(outputfile,open='w+')
+
+      writeLines(":StreamnodeConnectionsTable",fc)
+      writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","minHAND1","minHAND2")),collapse="  "),fc)
+        for (j in 1:nrow(sbconndf)) {
+          writeLines(sprintf("    %i %i %.4f %.4f",
+                             sbconndf[j,1],
+                             sbconndf[j,2],
+                             sbconndf[j,3],
+                             sbconndf[j,4]
+                             ),fc)
+        }
+      writeLines(":EndStreamnodeConnectionsTable",fc)
+      close(fc)
+  }
 
   ## write boundary conditions and flows ----
   outputfile <- file.path(workingfolder,"model",sprintf("%s.bbb",modelname))
@@ -191,7 +221,7 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   writeLines(sprintf(":ManningEnforceValues %s",bbopt$Manning_enforce_values), fc)
 
   writeLines("\n### Reach Specific Options ----", fc)
-  writeLines(sprintf(":ReachConveyanceMethod %s",toupper(bbopt$catchment_conveyance_method)), fc)
+  # writeLines(sprintf(":ReachConveyanceMethod %s",toupper(bbopt$catchment_conveyance_method)), fc)
   writeLines(sprintf(":ReachIntegrationMethod %s",toupper(bbopt$catchment_integration_method)), fc)
 
   writeLines("\n### PostProcessing Options ----", fc)
@@ -201,10 +231,14 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   close(fc)
 
   # create a GIS files folder and copy relevant pieces over
-  dir.create(file.path(workingfolder,"model","GIS_files"))
+  if (!dir.exists(file.path(workingfolder,"model","GIS_files"))) {
+    dir.create(file.path(workingfolder,"model","GIS_files"))
+  }
 
   # snapped_pourpoints_hand
-  bb_get_snappedpourpointshand(bbopt$workingfolder) %>%
+  spp <- bb_get_snappedpourpointshand(bbopt$workingfolder)
+  colnames(spp) <- c("hpointid",colnames(spp)[-1]) # rename pointid to hpointid
+  spp %>%
     write_sf(file.path(workingfolder,"model",bb_get_snappedpourpointshand(workingfolder="GIS_files", returnobject=FALSE)))
   # catchments_streamnodes shp
   bb_get_catchmentsfromstreamnodesshp(bbopt$workingfolder) %>%
