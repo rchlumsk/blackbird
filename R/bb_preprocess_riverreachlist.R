@@ -19,9 +19,11 @@
 #'
 #' @importFrom sf st_write st_zm
 #' @export bb_preprocess_riverreachlist
-bb_preprocess_riverreachlist <- function(workingfolder=NULL, rivershp=NULL, reachID_col="reachID", reachname_col=NULL) {
+bb_preprocess_riverreachlist <- function(bbopt=NULL, rivershp=NULL, reachID_col="reachID", reachname_col=NULL) {
 
   #  workingfolder=NULL, return_list=FALSE, overwrite=TRUE
+
+  workingfolder <- bbopt$workingfolder
 
   if (!is.null(workingfolder) & is.null(rivershp)) {
     rivershp <- bb_get_rivershp(workingfolder = workingfolder, returnobject = TRUE)
@@ -35,6 +37,15 @@ bb_preprocess_riverreachlist <- function(workingfolder=NULL, rivershp=NULL, reac
     if (reachname_col %notin% colnames(rivershp)) {
       stop(sprintf("reachname_col %s not found in rivershp.",reachID_col))
     }
+  }
+
+  ## check length of each segment for short ones
+  demres <- bb_get_demres(bbopt)
+
+  rl <- as.numeric(st_length(rivershp))
+  if (any(rl<3*demres)) {
+    warning(sprintf("There were %i reach lengths found with a length less than %.2f, which is 3*DEM resolution. This may cause issues in the delineation.",
+                    length(which(rl<3*demres)), demres*3))
   }
 
   if (!is.null(reachname_col)) {

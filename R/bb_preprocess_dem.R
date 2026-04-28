@@ -48,8 +48,8 @@ bb_preprocess_dem <- function(dem=NULL, workingfolder=NULL,
     stop(sprintf("invalid crs for dem, cannot be processed:\n%s", crs(dem)))
   }
 
-  # check if square
-  if (res(dem)[1] != res(dem)[2]) {
+  # check if (approximately) square
+  if (round(res(dem)[1],3) != round(res(dem)[2],3)) {
     stop("dem raster is not square; please resample with raster::resample or just terra::aggregate to obtain a square resolution dem")
   }
 

@@ -135,6 +135,9 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
                                               add_info_cols = c("reachID")) # keep reachID for interp in postproc
   pourpoints <- dplyr::distinct(pourpoints)
 
+  # replace pointid with hpointid
+  # colnames(pourpoints) <- c("hpointid",colnames(pourpoints)[-1])
+
   # compute downID for each pourpoint, even if out of snaps
   # generally assume that flow acc is higher in downstream
   flowacc <- terra::rast(flow_acc_file) # bb_get_flowaccraster(bbopt$workingfolder, returnobject = TRUE)
@@ -205,12 +208,28 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
   catchments <- bb_wbt_catchment(snapped_pourpoint_file, flow_dir_file,
                                  fn_catchment_ras, fn_catchment_vec, return_vector = TRUE)
 
+  ## read catchments from raster and polygonize, merge
+  ### note that the bb_wbt_catchment vectorization fails if discontiguous features
+  tfout <- tempfile(fileext=".shp")
+  suppressMessages(qgis_run_algorithm(algorithm = "gdal:polygonize",
+                                      INPUT=fn_catchment_ras,
+                                      OUTPUT=tfout))
+
+  catchments <- read_sf(tfout)
+  catchments$pointid <- catchments$DN
+
+  # merge all similar pointid
+  catchments <- catchments %>%
+    group_by(pointid) %>%
+    summarise(geometry = st_union(geometry),
+              .groups="drop")
+
   # rename VALUE as pointid to reduce ambiguity
   # cc <- colnames(catchments)
   # if ("VALUE" %in% cc) {colnames(catchments) <- gsub(pattern="VALUE", replacement = "pointid", x=cc)}
 
   ## catchments_streamnodes VALUE is the INDEX of the streamnodes pointid - updated with whitebox v2.4.0
-  catchments$pointid <- snapped_pourpoints[catchments$VALUE,]$pointid
+  # catchments$pointid <- snapped_pourpoints[catchments$VALUE,]$pointid
 
   # rasterize the snapped pour point IDs from HAND
   # note that dem is read in as raster here to support fasterize
@@ -258,6 +277,13 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
 
   hand_raster_file <- bb_get_handraster(workingfolder = workingfolder, returnobject = FALSE)
   writeRaster(hand_raster, filename = hand_raster_file, overwrite=overwrite)
+
+  ## check hand values, consider recommending increasing sample distance
+  if (min(hand_raster, na.rm=TRUE) < -0.1) {
+    warning("Negative values found in HAND raster, consider increasing bbopt$sample_linepoints_dist")
+  }
+
+  ## add check for any internal NA values in HAND (?)
 
   # add check that hand raster covers the rivershp domain
   rivershp <- bb_get_rivershp(workingfolder,returnobject = TRUE)

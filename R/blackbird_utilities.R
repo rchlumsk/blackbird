@@ -1992,6 +1992,26 @@ dist_projected <- function(p1, p2) {
   return(dist)
 }
 
+#' @title Calculate distance from projected points as vectors
+#'
+#' @description Calculates Euclidean distance between points.
+#'
+#' @param p1 point or set of points as sf object
+#' @param p2 second point in same format as \code{p1}
+#'
+#' @return a vector of calculated distances (length of vector based on input)
+#'
+#' @examples
+#' # xxx to do
+#'
+dist_projected_vector <- function(x1, x2) {
+  # uses euclidean distance to compute distance between projected points
+  # x1 <- st_coordinates(p1)
+  # x2 <- st_coordinates(p2)
+  dist <- sqrt((x1[1]-x2[1])^2+(x1[2]-x2[2])^2)
+  return(dist)
+}
+
 #' @title Calculate distance from coordinates
 #'
 #' @description Calculates Euclidean distance between coordinates supplied explicitly.

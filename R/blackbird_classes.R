@@ -863,7 +863,7 @@ catchment <- setRefClass("catchment",
 
     ### basic cell properties ----
     a <- res(dem)
-    if (a[1] == a[2]) { # check for square dem one more time
+    if (round(a[1],3) == round(a[2],3)) { # check for square dem one more time
       a <- a[1]
     } else {
       stop("dem must be square resolution")
@@ -1898,7 +1898,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
       return(TRUE)
     },
 
-    compute_min_elevations_all = function(confine_to_bankstations=FALSE, checkelev=FALSE) {
+    compute_min_elevations_all = function(confine_to_bankstations=FALSE, checkelev=FALSE, run_cpp=TRUE) {
       ## xxx could add subsetNodeIDs as an input here as well, for now using it to filter xsection and catchment nodes
 
       ## check which nodes are xsection and catchment
@@ -1938,9 +1938,27 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         hand <- terra::as.matrix(hand_raster)
         dem <- terra::as.matrix(dem_raster)
 
+        # issue here with cpp - not sure what the issue is
+
         # Use Rcpp to calculate average minimum elevation for each catchment
         ## note: fails if catchment has no HAND values == 0
-        return_elevs <- cpp_min_elev(catchment, hand, dem, subsetNodeIDs)
+        if (run_cpp) {
+          return_elevs <- cpp_min_elev(catchment, hand, dem, subsetNodeIDs)
+        } else {
+          return_elevs <- rep(NA,length(subsetNodeIDs))
+          for (i in 1:length(subsetNodeIDs)) {
+            ## fill in algorithm for non-cpp
+            ind1 <- which(catchment == subsetNodeIDs[i])
+            ind2 <- which(hand == min(hand[ind1],na.rm=TRUE))
+            ind3 <- common_elements(ind1,ind2)
+            if (length(ind3)==0) {
+              ind2 <- which(hand<min(hand[ind1],na.rm=TRUE)+0.02)
+              ind3 <- common_elements(ind1,ind2)
+            }
+            return_elevs[i] <- mean(dem[ind3],na.rm=TRUE)
+          }
+        }
+        names(return_elevs) <- as.character(subsetNodeIDs)
 
         if (any(!is.finite(return_elevs))) {
           tt <- which(!is.finite(as.numeric(return_elevs)))
@@ -2358,7 +2376,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         dem <- dem[ind]
         a <- terra::res(dem_raster)
         rm(dem_raster)
-        if (a[1] == a[2]) { # check for square dem one more time
+        if (round(a[1],3) == round(a[2],3)) { # check for square dem one more time
           a <- a[1]
         } else {
           stop("dem must be square resolution")
@@ -2636,8 +2654,8 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
                                                          catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
                                                          catchrs, applyfuzzy=applyfuzzy)
 
-            .self$streamnodeList[[indsdf[i]]]$depthdf <- preproc_table
-
+            # .self$streamnodeList[[indsdf[i]]]$depthdf <- preproc_table
+            .self$streamnodeList[[i]]$depthdf <- preproc_table
           }
         }
 
@@ -2763,6 +2781,11 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
       sdf <- .self$get_streamnodeList_as_dataframe()
       for (i in 1:nrow(sdf)) {
         x <- .self$streamnodeList[[i]]$depthdf$Area
+
+        if (all(x) == 0) {
+          warning(sprintf("Cross-sectional flow area for streamnode %i (index %i) is all zero",
+                           sdf$nodeID[i], i))
+        }
 
         if (!all(x == cummax(x))) {
           issuecount <- issuecount+1

@@ -7,6 +7,8 @@
 #' @param workingfolder folder to read inputs from and write outputs to for blackbird operations
 #' @param method raster resampling method passed to \code{raster::resample}
 #' @param maxvalue_check boolean to check and throw error if roughness exceeds a max value of 1.0 (can be overridden with FALSE)
+#' @param fix_NA boolean and whether to infill missing values
+#' @param defaultval default value used for infilling
 #' @param return_raster whether to return the processed raster as SpatRaster object
 #' @param overwrite whether to overwrite an existing file (default TRUE)
 #'
@@ -26,7 +28,7 @@
 #' @importFrom terra rast writeRaster crs resample as.matrix
 #' @importFrom sf st_crs
 #' @export bb_preprocess_manningsn
-bb_preprocess_manningsn <- function(manningsn=NULL, workingfolder=NULL, method="near", maxvalue_check=TRUE, return_raster=FALSE, overwrite=TRUE) {
+bb_preprocess_manningsn <- function(manningsn=NULL, workingfolder=NULL, method="near", maxvalue_check=TRUE, fix_NA=FALSE, defaultval=0.035, return_raster=FALSE, overwrite=TRUE) {
 
   if (is.null(manningsn)) {stop("manningsn is required")}
   if (is.null(workingfolder) & !return_raster) {stop("Either workingfolder must not be NULL, or return_raster must be TRUE")}
@@ -98,7 +100,12 @@ bb_preprocess_manningsn <- function(manningsn=NULL, workingfolder=NULL, method="
   manningsn_check <- terra::as.matrix(manningsn)
   manningsn_check <- manningsn_check[which(!is.na(dem_check))]
   if (any(which(is.na(manningsn_check)))) {
-    stop("Must ensure that landcover raster completely covers all valid DEM regions.")
+    if (!fix_NA) {
+      stop("Must ensure that landcover raster completely covers all valid DEM regions.")
+    } else {
+      warning("Landcover may not cover all DEM regions, applying default value for missing areas")
+      manningsn[is.na(manningsn)] <- defaultval
+    }
   }
 
   # write to workingfolder if provided
