@@ -103,26 +103,29 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   # add in the redirect
   writeLines(sprintf("\n:RedirectToFile %s_reaches.bbg",modelname), fc)
 
-  # check if sbconndf provided
-  if (!is.null(sbconndf)) {
+  # check if snconndf provided
+  if (!is.null(snconndf)) {
     writeLines(sprintf("\n:RedirectToFile %s_streamnodeconnections.bbg",modelname), fc)
   }
 
   close(fc)
 
-  # write sbconndf if not null
-  if (!is.null(sbconndf)) {
+  # write snconndf if not null
+  if (!is.null(snconndf)) {
       outputfile <- file.path(workingfolder,"model",sprintf("%s_streamnodeconnections.bbg",modelname))
       fc <- file(outputfile,open='w+')
 
       writeLines(":StreamnodeConnectionsTable",fc)
-      writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","minHAND1","minHAND2")),collapse="  "),fc)
-        for (j in 1:nrow(sbconndf)) {
-          writeLines(sprintf("    %i %i %.4f %.4f",
-                             sbconndf[j,1],
-                             sbconndf[j,2],
-                             sbconndf[j,3],
-                             sbconndf[j,4]
+      writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","HAND1","HAND2","elev1","elev2","reachID")),collapse="  "),fc)
+        for (j in 1:nrow(snconndf)) {
+          writeLines(sprintf("    %i %i %.4f %.4f %.4f %.4f %i",
+                             snconndf$craster[j],
+                             snconndf$craster2[j],
+                             snconndf$hh[j],
+                             snconndf$hh2[j],
+                             snconndf$ee[j],
+                             snconndf$ee2[j],
+                             snconndf$reachID[j]
                              ),fc)
         }
       writeLines(":EndStreamnodeConnectionsTable",fc)

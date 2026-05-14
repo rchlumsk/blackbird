@@ -279,7 +279,7 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
   writeRaster(hand_raster, filename = hand_raster_file, overwrite=overwrite)
 
   ## check hand values, consider recommending increasing sample distance
-  if (min(hand_raster, na.rm=TRUE) < -0.1) {
+  if (min(hand_raster[!is.na(hand_raster)], na.rm=TRUE) < -0.1) {
     warning("Negative values found in HAND raster, consider increasing bbopt$sample_linepoints_dist")
   }
 
