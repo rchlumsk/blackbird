@@ -127,6 +127,12 @@ bb_preprocess_reach_lengths <- function(workingfolder=NULL, dE=1.0, raster_sourc
                                       PIXEL_SIZE=demres,
                                       OUTPUT=tfidw))
 
+  # resample to enforce same size as dem
+  dem_raster <- bb_get_demraster(workingfolder, returnobject = TRUE)
+  reach_length_raster <- bb_get_reachlengthraster(workingfolder,returnobject=TRUE)
+  reachlength_raster <- terra::resample(reachlength_raster, dem_raster)
+  terra::writeRaster(reachlength_raster, bb_get_reachlengthraster(workingfolder,returnobject = FALSE))
+
   if (return_raster) {
     reach_length_raster <- bb_get_reachlengthraster(workingfolder,returnobject=TRUE)
     return(reach_length_raster)

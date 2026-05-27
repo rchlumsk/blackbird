@@ -2109,6 +2109,15 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
     compute_preprocessing_tables = function(bbopt, subsetNodeIDs = NULL, skip_extent_checks=FALSE,
                                                 runparallel=FALSE, applyfuzzy=FALSE, usefuzzyhand=FALSE) {
 
+      # subsetNodeIDs = NULL
+      # subsetNodeIDs = seq(188,195)
+
+      # skip_extent_checks=FALSE
+      # runparallel=FALSE
+      # applyfuzzy=FALSE
+      # usefuzzyhand=FALSE
+      # .self <- gg
+
       if (runparallel & applyfuzzy) {
         stop("not yet configured to run fuzzy in parallel")
       }
@@ -2190,6 +2199,9 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
           hand_raster <- bb_get_handraster(workingfolder = workingfolder, returnobject = TRUE)
         } else {
           hand_raster <- bb_get_fuzzyhandraster(workingfolder)
+        }
+        if (!identical(dim(hand_raster), dim(catchment_raster))) {
+          stop("dimensions of hand raster not equal to catchment raster")
         }
         if (!skip_extent_checks & terra::ext(hand_raster) != terra::ext(catchment_raster)) {
           stop("need to crop/extend hand raster to match extents of catchment raster before proceeding")
@@ -2367,6 +2379,9 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         # option added to skip extent checks, as that is quite slow
 
         dem_raster <- terra::rast(bb_get_demraster(workingfolder = workingfolder, returnobject = FALSE))
+        if (!identical(dim(dem_raster), dim(catchment_raster))) {
+          stop("dimensions of dem raster not equal to catchment raster")
+        }
         if (!skip_extent_checks & terra::ext(dem_raster) != terra::ext(catchment_raster)) {
           stop("need to crop/extend dem raster to match extents of catchment raster before proceeding")
         }
@@ -2382,7 +2397,11 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
           stop("dem must be square resolution")
         }
 
+        ## add check for number of rows and cols instead of ext?
         manningsn_raster <- terra::rast(bb_get_manningsnraster(workingfolder = workingfolder, returnobject = FALSE))
+        if (!identical(dim(manningsn_raster), dim(catchment_raster))) {
+          stop("dimensions of manningsn raster not equal to catchment raster")
+        }
         if (!skip_extent_checks & terra::ext(manningsn_raster) != terra::ext(catchment_raster)) {
           stop("need to crop/extend manningsn raster to match extents of catchment raster before proceeding")
         }
@@ -2392,12 +2411,16 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         manningsn <- manningsn[ind]
         rm(manningsn_raster)
 
-        reachlength <- rep(NA,length(hand))
+        # reachlength <- rep(NA,length(hand))
         # if (bbopt$modeltype != "hand-manning") {
         reachlength_raster <- terra::rast(bb_get_reachlengthraster(workingfolder, returnobject = FALSE))
+        if (!identical(dim(reachlength_raster), dim(catchment_raster))) {
+          stop("dimensions of reachlength raster not equal to catchment raster")
+        }
         if (!skip_extent_checks & terra::ext(reachlength_raster) != terra::ext(catchment_raster)) {
           stop("need to crop/extend reachlength raster to match extents of catchment raster before proceeding")
         }
+
         reachlength <- terra::as.matrix(reachlength_raster)
         # reachlength <- reachlength[catchment %in% uni & !is.na(catchment)]
         reachlength <- reachlength[ind]
@@ -2417,14 +2440,18 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
 
         # final check on missing values in inputs before processing
         ## subset further if needed
-        newind <- seq(1,length(dem))
-        for (rr in list(catchment,dem,hand,manningsn,reachlength)) {
-          if (any(is.na(rr))) {
-            # message(sprintf("NA value found in one or more layers"))
-            temp <- which(!is.na(reachlength))
-            newind <- newind[which(newind %in% temp)]
-          }
-        }
+        # newind <- seq(1,length(dem))
+        # for (rr in list(catchment,dem,hand,manningsn,reachlength)) {
+        #   if (any(is.na(rr))) {
+        #     # message(sprintf("NA value found in one or more layers"))
+        #     temp <- which(!is.na(reachlength))
+        #     newind <- newind[which(newind %in% temp)]
+        #   }
+        # }
+        # newind <- which(Reduce(`&`, lapply(list(dem, hand, manningsn, reachlength), Negate(is.na))))
+        newind <- which(Reduce(`&`, lapply(list(dem, hand, manningsn, reachlength), Negate(is.na)))) # took out reachlength temporarily xxx
+        # newind <- which(complete.cases(data.frame(dem, hand, manningsn, reachlength)))
+
 
         # subset from dhands if needed to avoid NA values
         if (bbopt$use_dhand) {
@@ -2446,6 +2473,13 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
           manningsn <- manningsn[newind]
           reachlength <- reachlength[newind]
           # slope <- slope[newind]
+
+          ## checks if any empty
+          for (ii in uni) {
+            if (length(which(catchment==ii))==0) {
+              stop(sprintf("catchment is empty for nodeID %i",ii))
+            }
+          }
 
           if (bbopt$use_dhand) {
             dhands2 <- array(data=NA, dim=c(length(bbopt$Hseq), length(newind)))
