@@ -26,7 +26,7 @@
 #' # xxx TO DO
 #'
 #'
-#' @importFrom terra rast ext as.contour disagg
+#' @importFrom terra rast ext as.contour disagg resample writeRaster
 #' @importFrom sf st_as_sf st_cast st_intersection st_length
 #' @importFrom qgisprocess qgis_run_algorithm
 #' @export bb_preprocess_reach_lengths
@@ -130,8 +130,8 @@ bb_preprocess_reach_lengths <- function(workingfolder=NULL, dE=1.0, raster_sourc
   # resample to enforce same size as dem
   dem_raster <- bb_get_demraster(workingfolder, returnobject = TRUE)
   reach_length_raster <- bb_get_reachlengthraster(workingfolder,returnobject=TRUE)
-  reachlength_raster <- terra::resample(reachlength_raster, dem_raster)
-  terra::writeRaster(reachlength_raster, bb_get_reachlengthraster(workingfolder,returnobject = FALSE))
+  reachlength_raster <- terra::resample(reach_length_raster, dem_raster)
+  terra::writeRaster(reachlength_raster, bb_get_reachlengthraster(workingfolder,returnobject = FALSE), overwrite=TRUE)
 
   if (return_raster) {
     reach_length_raster <- bb_get_reachlengthraster(workingfolder,returnobject=TRUE)

@@ -11,6 +11,7 @@
 #' @param modelname prefix for model file names
 #' @param bbmodel blackbird model object to write
 #' @param snconndf dataframe of connections between streamnodes with minimum hand values defined
+#' @param explicit_flows boolean whether to write in explicit flows
 #'
 #' @return {returns \code{TRUE} if run successfully}
 #
@@ -21,7 +22,7 @@
 #' @importFrom raster raster writeRaster crs
 #' @export bb_write_model_files_cpp
 bb_write_model_files_cpp <- function(modelname="modelname",
-                                 bbmodel=NULL, snconndf=NULL) {
+                                 bbmodel=NULL, snconndf=NULL, explicit_flows=FALSE) {
 
   if (is.null(bbmodel)) {stop("bbmodel is required")}
 
@@ -148,33 +149,63 @@ bb_write_model_files_cpp <- function(modelname="modelname",
     writeLines(":EndBoundaryCondition", fc)
   }
 
-  writeLines("\n:SteadyFlows", fc)
-  writeLines(paste(c("  :Attributes",colnames(flows$flowdf)),collapse="  "),fc)
+  if (!explicit_flows) {
 
-  # subset headwater nodes
-  ind <- which(sdf$upnodeID1 == -1)
+    writeLines("\n:SteadyFlows", fc)
+    writeLines(paste(c("  :Attributes",colnames(flows$flowdf)),collapse="  "),fc)
 
-  for (jj in ind) {
-    writeLines(paste(c("    ",flows$flowdf[jj,]), collapse="  "),fc)
+    # subset headwater nodes
+    ind <- which(sdf$upnodeID1 == -1)
+
+    for (jj in ind) {
+      writeLines(paste(c("    ",flows$flowdf[jj,]), collapse="  "),fc)
+    }
+    writeLines(":EndSteadyFlows", fc)
+
+    ## write sources and sinks
+    writeLines("\n:StreamnodeSourcesSinks", fc)
+    writeLines(paste(c("  :Attributes","nodeID",rep(c("source","sink"), ncol(flows$flowdf)-1)  ),collapse="  "),fc)
+
+    ## for all the source and sink terms that are not zero ....
+    warning("script not configured to write sources and sinks, writing template that will need to be filled in manually")
+    writeLines(paste(c("    ",sdf$nodeID[1],rep(c(0,0), ncol(flows$flowdf)-1)  ),collapse="  "),fc)
+
+    writeLines(":EndStreamnodeSourcesSinks\n", fc)
+
+  } else {
+
+    writeLines("\n:ExplicitSteadyFlows", fc)
+
+    ## xxx update to write flow profiels appropriately
+    numprofiles <- length(bbmodel$bbfp)
+    i=1
+    if (numprofiles==1)  {
+        fp <- bbmodel$bbfp$flowdf
+      } else {
+        fp <- bbmodel$bbfp[[i]]$flowdf
+      }
+
+    writeLines(paste(c("  :Attributes",colnames(fp)),collapse="  "),fc)
+
+    for (i in 1:numprofiles) {
+
+      if (numprofiles==1)  {
+        fp <- bbmodel$bbfp$flowdf
+      } else {
+        fp <- bbmodel$bbfp[[i]]$flowdf
+      }
+
+      for (j in 1:nrow(fp)) {
+        writeLines(paste(c("    ",fp$nodeID[j], round(fp$flowprofile1[j],3) ),collapse="  "),fc)
+      }
+    }
+    writeLines(":EndSExplicitSteadyFlows", fc)
   }
-  writeLines(":EndSteadyFlows", fc)
-
-  ## write sources and sinks
-  writeLines("\n:StreamnodeSourcesSinks", fc)
-  writeLines(paste(c("  :Attributes","nodeID",rep(c("source","sink"), ncol(flows$flowdf)-1)  ),collapse="  "),fc)
-
-  ## for all the source and sink terms that are not zero ....
-  warning("script not configured to write sources and sinks, writing template that will need to be filled in manually")
-  writeLines(paste(c("    ",sdf$nodeID[1],rep(c(0,0), ncol(flows$flowdf)-1)  ),collapse="  "),fc)
-
-  writeLines(":EndStreamnodeSourcesSinks\n", fc)
 
   writeLines("# GlobalFlowMultiplier can be used to easily nudge flows in the model by the same multiplier", fc)
   writeLines(":GlobalFlowMultiplier   1.0", fc)
 
   close(fc)
-
-
 
   ## write main input options file ----
 
@@ -187,7 +218,7 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   # writeLines(sprintf(":ModelName %s",modelname), fc)
 
   writeLines("### General Model Setup Options ----", fc)
-  writeLines(sprintf(":ModelType %s",toupper(bbopt$modeltype)), fc)
+  writeLines(sprintf(":ModelType %s",toupper(gsub("-","_",bbopt$modeltype))), fc)
   writeLines(sprintf(":RegimeType %s",toupper(bbopt$regimetype)), fc)
   # writeLines(sprintf(":gravity %s",bbopt$g), fc)
   # writeLines(paste(c(":Hseq", bbopt$Hseq), collapse=" "), fc)
