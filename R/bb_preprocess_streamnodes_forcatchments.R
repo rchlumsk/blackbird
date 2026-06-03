@@ -14,9 +14,7 @@
 #' @details
 #' Assumes that the pointid increases further downstream, which is used to determine the downstream nodeID.
 #'
-#'
 #' @examples
-#'
 #' library(sf)
 #' rivershp <- sf::read_sf(system.file("extdata", "riverline_NB.shp", package="blackbird"))
 #'
@@ -24,8 +22,13 @@
 #'
 #' bb_preprocess_streamnodes_forcatchments(nodes)
 #'
-#' @importFrom sf st_write st_zm
+#' @importFrom sf st_write st_zm st_snap st_nearest_feature st_geometry st_sfc st_line_project st_crs st_as_sf st_drop_geometry
 #' @importFrom terra extract
+#' @importFrom sfnetworks as_sfnetwork activate
+#' @importFrom tidygraph as_tibble
+#' @importFrom dplyr mutate filter arrange select rename left_join pull row_number
+#' @importFrom purrr map_int map2_dbl
+#' @importFrom igraph as.igraph bfs
 #' @export bb_preprocess_streamnodes_forcatchments
 bb_preprocess_streamnodes_forcatchments <- function(bbopt=NULL,
                                                     # snap_dist=NULL,
@@ -181,6 +184,105 @@ bb_preprocess_streamnodes_forcatchments <- function(bbopt=NULL,
   # }
 
 
+  ## Compute downid with sfnetworks ----
+  # alternative nodeID calculation to test out, should be more reliable than previous,
+  # and faster for larger networks
+
+  # 0. Ensure each point has a unique pointid
+  if (length(unique(snapped_streamnodes$pointid))!=nrow(snapped_streamnodes)) {
+    stop("streamnodes have non-unique IDs, double check data or assign new IDs")
+    # snapped_streamnodes$pointid <- seq_len(nrow(snapped_streamnodes))
+  }
+
+  # 1. Build directed sfnetwork
+  net <- as_sfnetwork(rivershp, directed = TRUE) %>%
+      activate("edges") %>%
+      mutate(edge_id = row_number())
+
+  edges_tbl <- net %>%
+    activate("edges") %>%
+    as_tibble() %>%
+    mutate(from_node = from,
+           to_node   = to)
+
+  # 2. Snap points and attach edge_id
+  snapped_pts <- st_snap(snapped_streamnodes, rivershp, tolerance = 1)
+  snapped_pts$edge_id <- st_nearest_feature(snapped_pts, rivershp)
+
+  # 3. Compute distance along each edge using st_line_project()
+  snapped_pts$dist_on_edge <- map2_dbl(
+    snapped_pts$edge_id,
+    st_geometry(snapped_pts),
+    ~ {
+      line_geom  <- st_geometry(rivershp)[[.x]]
+      point_geom <- .y
+
+      line_sfc  <- st_sfc(line_geom,  crs = st_crs(rivershp))
+      point_sfc <- st_sfc(point_geom, crs = st_crs(rivershp))
+
+      as.numeric(st_line_project(line_sfc, point_sfc))
+    }
+  )
+
+  # 4. Build igraph for downstream traversal
+  g <- as.igraph(net)
+
+  # 5. For each point, find the next downstream point (downid)
+  snapped_pts$downid <- map_int(
+    seq_len(nrow(snapped_pts)),
+    function(i) {
+
+      this_edge  <- snapped_pts$edge_id[i]
+      this_dist  <- snapped_pts$dist_on_edge[i]
+      this_point <- snapped_pts$pointid[i]
+
+      #--------------------------------------------------------
+      # 5A — First try: next point on the SAME edge
+      #--------------------------------------------------------
+
+      same_edge_pts <- snapped_pts %>%
+        filter(edge_id == this_edge,
+               dist_on_edge > this_dist) %>%
+        arrange(dist_on_edge)
+
+      if (nrow(same_edge_pts) > 0) {
+        return(same_edge_pts$pointid[1])
+      }
+
+      #--------------------------------------------------------
+      # 5B — Otherwise: find next edge downstream
+      #--------------------------------------------------------
+
+      dn_node <- edges_tbl$to_node[this_edge]
+
+      bfs_res <- igraph::bfs(
+        graph = g,
+        root = dn_node,
+        mode = "out",
+        unreachable = FALSE
+      )
+
+      visited_nodes <- bfs_res$order[!is.na(bfs_res$order)]
+
+      dn_edges <- edges_tbl %>%
+        filter(from_node %in% visited_nodes) %>%
+        pull(edge_id)
+
+      # Find the first point on any downstream edge
+      dn_pts <- snapped_pts %>%
+        filter(edge_id %in% dn_edges) %>%
+        arrange(edge_id, dist_on_edge)
+
+      if (nrow(dn_pts) == 0) return(NA_integer_)
+
+      dn_pts$pointid[1]
+    }
+  )
+
+  # 6. Result: snapped_pts now has pointid and downid
+  snapped_pts[is.na(snapped_pts$downid),]$downid <- -1 # replace NA downid with -1
+  snapped_streamnodes <- snapped_pts[,c("pointid","reachID","rchdwnID","geometry","downid")]
+  rm(snapped_pts)
 
 
   ## replace this whole algorithm with a flowacc independent script for network points
@@ -189,103 +291,105 @@ bb_preprocess_streamnodes_forcatchments <- function(bbopt=NULL,
 
   # sample flowacc to determine downstream direction
 
-  flowacc <- terra::rast(flow_acc_file)    # bb_get_flowaccraster(bbopt$workingfolder, returnobject = TRUE)
-  snapped_streamnodes$flow_acc <- terra::extract(flowacc,snapped_streamnodes)[,2]
-  rm(flowacc)
-  if (any(is.na(snapped_streamnodes$flow_acc))) {
-    stop("flowacc does not appear to cover the streamnodes (NA values found at streamnode points), requires full coverage")
-  }
+  # flowacc <- terra::rast(flow_acc_file)    # bb_get_flowaccraster(bbopt$workingfolder, returnobject = TRUE)
+  # snapped_streamnodes$flow_acc <- terra::extract(flowacc,snapped_streamnodes)[,2]
+  # rm(flowacc)
+  # if (any(is.na(snapped_streamnodes$flow_acc))) {
+  #   stop("flowacc does not appear to cover the streamnodes (NA values found at streamnode points), requires full coverage")
+  # }
+  #
+  # ### determine downstream network
+  # if (calc_downid) {
+  #
+  #   streamnodes_to_remove <- c() # pointID reference for streamnodes to remove
+  #
+  #   snapped_streamnodes$downid <- NA
+  #
+  #   # note, can fail if overlapping reaches from lineshp, need to have a unique reachID on each node without overlap
+  #
+  #   for (i in 1:nrow(snapped_streamnodes)) {
+  #
+  #     if (i < nrow(snapped_streamnodes)) {
+  #       # check if next streamnodes is on same branch and flowacc is less
+  #       if (snapped_streamnodes[(i+1),]$reachID == snapped_streamnodes[i,]$reachID &
+  #           snapped_streamnodes[(i+1),]$pointid > snapped_streamnodes[i,]$pointid) {
+  #         snapped_streamnodes[i,]$downid <- snapped_streamnodes[(i+1),]$pointid
+  #
+  #         # check if the downstream sub id is in the reachID column, and the max elev is less than this one
+  #       } else if (snapped_streamnodes[i,]$rchdwnID %in% snapped_streamnodes$reachID &
+  #                  nrow(snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,])>0) {
+  #         temp <- snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,]
+  #
+  #         # find the upstream most one - min flow acc
+  #         temp <- temp[temp$flow_acc == min(temp$flow_acc),]
+  #
+  #         if (nrow(temp)==1) {
+  #           snapped_streamnodes[i,]$downid <- temp$pointid
+  #         } else if (nrow(temp)==2) {
+  #           if (dist_projected(p1=temp[1,], p2=temp[2,]) < demres) {
+  #             snapped_streamnodes[i,]$downid <- temp[1,]$pointid
+  #             streamnodes_to_remove <- c(streamnodes_to_remove, temp[2,]$pointid)
+  #           } else if (temp[1,]$flow_acc == temp[2,]$flow_acc) {
+  #             # next two downstream points have the same elevation, but far enough apart to be from two grid cells
+  #             snapped_streamnodes[i,]$downid <- temp[1,]$pointid
+  #           }
+  #         } else {
+  #
+  #           # get the max distance between points
+  #           max_dist <- 0
+  #           for (i in 1:nrow(temp)) {
+  #             for (j in 1:nrow(temp)) {
+  #               dd <- dist_projected(p1=temp[i,], p2=temp[j,])
+  #               if (dd > max_dist) {
+  #                 max_dist <- dd
+  #               }
+  #             }
+  #           }
+  #
+  #           if (max_dist < demres) {
+  #             snapped_streamnodes[i,]$downid <- temp[1,]$pointid
+  #             streamnodes_to_remove <- temp[2:nrow(temp),]$pointid
+  #           } else {
+  #             stop("more than 2 streamnodes close together and more than demres, something wrong")
+  #           }
+  #
+  #         }
+  #         # snapped_streamnodes[i,]$downid <- temp[temp$flowacc == max(temp$flowacc),]$pointid
+  #       } else {
+  #         snapped_streamnodes[i,]$downid <- -1
+  #       }
+  #     } else {
+  #       if (snapped_streamnodes[i,]$rchdwnID %in% snapped_streamnodes$reachID &
+  #                  nrow(snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,])>0) {
+  #         # junction
+  #         temp <- snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,]
+  #         snapped_streamnodes[i,]$downid <-  temp[temp$pointid %notin% temp$downid,]$pointid
+  #       } else {
+  #         # assumed end of the line
+  #         snapped_streamnodes[i,]$downid <- -1
+  #       }
+  #     }
+  #   }
+  #
+  #   # remove any streamnodes that need removing
+  #   if (length(streamnodes_to_remove) > 0) {
+  #     snapped_streamnodes <- snapped_streamnodes[-which(snapped_streamnodes$pointid %in% streamnodes_to_remove),]
+  #     warning("streamnodes removed, may need to adjust network numbering")
+  #   }
+  #
+  #   if (any(is.na(snapped_streamnodes$downid))) {
+  #     warning("bb_preprocess_streamnodes_forcatchments: failed to determine downstream ID for all streamnodes")
+  #   }
+  #
+  #   if (nrow(snapped_streamnodes[snapped_streamnodes$downid == -1,]) > 1) {
+  #     warning("Multiple streamnodes with no outlet found, please check for accuracy. Also consider increasing the snap_dist")
+  #   }
+  #
+  #   ## ---- end of replacement
+  #
+  # }
+  #
 
-  ### determine downstream network
-  if (calc_downid) {
-
-    streamnodes_to_remove <- c() # pointID reference for streamnodes to remove
-
-    snapped_streamnodes$downid <- NA
-
-    # note, can fail if overlapping reaches from lineshp, need to have a unique reachID on each node without overlap
-
-    for (i in 1:nrow(snapped_streamnodes)) {
-
-      if (i < nrow(snapped_streamnodes)) {
-        # check if next streamnodes is on same branch and flowacc is less
-        if (snapped_streamnodes[(i+1),]$reachID == snapped_streamnodes[i,]$reachID &
-            snapped_streamnodes[(i+1),]$pointid > snapped_streamnodes[i,]$pointid) {
-          snapped_streamnodes[i,]$downid <- snapped_streamnodes[(i+1),]$pointid
-
-          # check if the downstream sub id is in the reachID column, and the max elev is less than this one
-        } else if (snapped_streamnodes[i,]$rchdwnID %in% snapped_streamnodes$reachID &
-                   nrow(snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,])>0) {
-          temp <- snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,]
-
-          # find the upstream most one - min flow acc
-          temp <- temp[temp$flow_acc == min(temp$flow_acc),]
-
-          if (nrow(temp)==1) {
-            snapped_streamnodes[i,]$downid <- temp$pointid
-          } else if (nrow(temp)==2) {
-            if (dist_projected(p1=temp[1,], p2=temp[2,]) < demres) {
-              snapped_streamnodes[i,]$downid <- temp[1,]$pointid
-              streamnodes_to_remove <- c(streamnodes_to_remove, temp[2,]$pointid)
-            } else if (temp[1,]$flow_acc == temp[2,]$flow_acc) {
-              # next two downstream points have the same elevation, but far enough apart to be from two grid cells
-              snapped_streamnodes[i,]$downid <- temp[1,]$pointid
-            }
-          } else {
-
-            # get the max distance between points
-            max_dist <- 0
-            for (i in 1:nrow(temp)) {
-              for (j in 1:nrow(temp)) {
-                dd <- dist_projected(p1=temp[i,], p2=temp[j,])
-                if (dd > max_dist) {
-                  max_dist <- dd
-                }
-              }
-            }
-
-            if (max_dist < demres) {
-              snapped_streamnodes[i,]$downid <- temp[1,]$pointid
-              streamnodes_to_remove <- temp[2:nrow(temp),]$pointid
-            } else {
-              stop("more than 2 streamnodes close together and more than demres, something wrong")
-            }
-
-          }
-          # snapped_streamnodes[i,]$downid <- temp[temp$flowacc == max(temp$flowacc),]$pointid
-        } else {
-          snapped_streamnodes[i,]$downid <- -1
-        }
-      } else {
-        if (snapped_streamnodes[i,]$rchdwnID %in% snapped_streamnodes$reachID &
-                   nrow(snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,])>0) {
-          # junction
-          temp <- snapped_streamnodes[snapped_streamnodes$reachID == snapped_streamnodes[i,]$rchdwnID,]
-          snapped_streamnodes[i,]$downid <-  temp[temp$pointid %notin% temp$downid,]$pointid
-        } else {
-          # assumed end of the line
-          snapped_streamnodes[i,]$downid <- -1
-        }
-      }
-    }
-
-    # remove any streamnodes that need removing
-    if (length(streamnodes_to_remove) > 0) {
-      snapped_streamnodes <- snapped_streamnodes[-which(snapped_streamnodes$pointid %in% streamnodes_to_remove),]
-      warning("streamnodes removed, may need to adjust network numbering")
-    }
-
-    if (any(is.na(snapped_streamnodes$downid))) {
-      warning("bb_preprocess_streamnodes_forcatchments: failed to determine downstream ID for all streamnodes")
-    }
-
-    if (nrow(snapped_streamnodes[snapped_streamnodes$downid == -1,]) > 1) {
-      warning("Multiple streamnodes with no outlet found, please check for accuracy. Also consider increasing the snap_dist")
-    }
-
-    ## ---- end of replacement
-
-  }
 
   # check outputs
   if (any(is.na(snapped_streamnodes$downid ))) {

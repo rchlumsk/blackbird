@@ -1,7 +1,7 @@
 Package: blackbird
 Type: Package
 Title: Flood Mapping Utilities and Hydraulic Calculations
-Version: 1.0.0
+Version: 1.0.1
 Authors@R: c(
     person("Robert", "Chlumsky", email = "robert.chlumsky@heronhydrologic.ca", role = c("cre","aut"), comment = c(ORCID = "0000-0002-1303-5064")),
     person("Brian", "Peng", email = "brian.peng@heronhydrologic.ca", role = c("ctb","aut"), comment = c(ORCID = "0000-0003-2715-7166")),
@@ -26,13 +26,16 @@ Imports:
     lwgeom,
     magrittr,
     parallel,
+    purrr,
     qgisprocess (>= 0.4.1),
     terra (>= 1.7-55),
     raster (>= 3.6-26),
     Rcpp (>= 1.0.11),
     rjson,
     sf (>= 1.0-21),
+    sfnetworks,
     sp (>= 2.1-1),
+    tidygraph,
     whitebox (>= 2.4.3)
 License: GPL-3 | file LICENSE
 Encoding: UTF-8
