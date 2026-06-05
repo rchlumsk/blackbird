@@ -11,8 +11,8 @@
 #'
 #' @importFrom terra extract
 #' @improtFrom sf st_touches st_intersection st_as_sf st_buffer
-#' @export bb_preprocess_snconndf_v3
-bb_preprocess_snconndf_v3 <- function(bbmodel=NULL) {
+#' @export bb_preprocess_snconndf
+bb_preprocess_snconndf <- function(bbmodel=NULL) {
 
   if (is.null(bbmodel)) {
     stop("bbmodel is required")
@@ -58,6 +58,8 @@ bb_preprocess_snconndf_v3 <- function(bbmodel=NULL) {
     touchid <- sdf$nodeID[unlist(sf::st_touches(catchments_streamnodes$geometry[i], catchments_streamnodes$geometry))]
     # remove self and any immediate upstream/downstream streamnodes
     touchid <- touchid[which(touchid %notin% c(cid, downid, sdf$upnodeID1[i], sdf$upnodeID2[i]))]
+
+    # xxx update to allow for spills US->DS nodes on same reach, but not DS->US
 
     # remove any for which currentid is upstream or downstream of a junction to
     blocked_reaches <- c(rivershp[which(rivershp$downID == catchments_streamnodes$reachID[i]),]$reachID, # which reaches drain to current reachID

@@ -2461,7 +2461,7 @@ bb_generate_flow_table <- function(geometry=NULL) {
 #' @export bb_get_fileinfo
 bb_get_fileinfo <- function(objectname=NULL) {
 
-  sdf <- data.frame(matrix(ncol=3,nrow=48,byrow=TRUE,
+  sdf <- data.frame(matrix(ncol=3,nrow=50,byrow=TRUE,
                            data=c(
                              c("rivershp",                    "bb_rivershp.shp","sf"),
                              # c("genrivershp",                 "bb_generated_rivershp.shp","sf"),
@@ -2476,6 +2476,9 @@ bb_get_fileinfo <- function(objectname=NULL) {
                              c("flowdirdinfraster",           "bb_flow_dinf_direction.tif","SpatRaster"),
                              c("sloperaster",                 "bb_slope.tif","SpatRaster"),
                              c("reachlengthraster",           "bb_reach_length.tif","SpatRaster"),
+
+                             c("channelwsraster",             "bb_channel_ws.tif","SpatRaster"),
+                             c("channelwsshp",                "bb_channel_ws.shp","sf"),
 
                              c("euclideandistraster",         "bb_euclideandist.tif","SpatRaster" ),
                              c("euclideandistcondraster",     "bb_euclideandist_conditioned.tif","SpatRaster" ),
@@ -2686,6 +2689,20 @@ bb_get_sloperaster <- function(workingfolder=NULL, returnobject=TRUE, include_wf
 #' @rdname bb_get
 bb_get_reachlengthraster <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
   objectname <- "reachlengthraster"
+  result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
+  return(result)
+}
+
+#' @rdname bb_get
+bb_get_channelwsraster <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
+  objectname <- "channelwsraster"
+  result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
+  return(result)
+}
+
+#' @rdname bb_get
+bb_get_channelwsshp <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
+  objectname <- "channelwsshp"
   result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
   return(result)
 }

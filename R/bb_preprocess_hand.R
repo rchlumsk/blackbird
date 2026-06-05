@@ -6,6 +6,8 @@
 #' @param dem Digital Elevation Model (DEM) as a raster object
 #' @param rivershp river shapefile as sf object
 #' @param removesinks_method method to use in the sink removal algorithm for dem condioning (or 'skip' to use DEM as is)
+#' @param use_channelws boolean whether to use the channel water surface polygon to determine the thalweg value
+#' @param channelws_percentile if using the use_channelws method, then this is the percentile to use in each. Value of zero uses the min value
 #' @param overwrite if \code{TRUE}, will overwrite any written files
 #' @param return_raster whether to return raster (default \code{TRUE})
 #'
@@ -47,6 +49,8 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
                                bbopt=NULL,
                                # sample_linepoints_dist=NULL,
                                removesinks_method="breach_leastcost",
+                               use_channelws=FALSE,
+                               channelws_percentile=0,
                                # removesinks_dist=NULL,
                                # pourpoint_snap_dist=NULL,
                                overwrite=TRUE, return_raster=TRUE) {
@@ -72,6 +76,10 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
   }
   if (is.null(bbopt$workingfolder) | bbopt$workingfolder=="") {
     stop("bbopt$workingfolder must not be empty!")
+  }
+
+  if (!use_channelws & channelws_percentile>0) {
+    warning("channelws_percentile is intended to be zero if the channel mask is not used. Recommend setting the value back to zero to take the minimum")
   }
 
   workingfolder <- bbopt$workingfolder
@@ -134,9 +142,14 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
                                               min_end_offset = demres,
                                               add_info_cols = c("reachID")) # keep reachID for interp in postproc
   pourpoints <- dplyr::distinct(pourpoints)
+  pourpoints$pointid <- seq(1,nrow(pourpoints))
 
   # replace pointid with hpointid
   # colnames(pourpoints) <- c("hpointid",colnames(pourpoints)[-1])
+
+  ####
+
+  # xxx to do - replace this exercise with sfnetwork to avoid the flow acc issue altogether
 
   # compute downID for each pourpoint, even if out of snaps
   # generally assume that flow acc is higher in downstream
@@ -172,102 +185,96 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
       pourpoints[pourpoints$reachID != rivershp$reachID[i],]
     )
   }
+
+  ####
+
   # rm(rivershp)
   # pourpoints$rchdwnID <- pourpoints$downID
   # pourpoints <- pourpoints[,-which(colnames(pourpoints)=="downID")]
   if (overwrite) {unlink(pourpoint_file)}
   sf::st_write(pourpoints, pourpoint_file)
-  bb_wbt_pourpoints(pourpoint_file, flow_acc_file,
-                    snapped_pourpoint_file, snap_dist = bbopt$pourpoint_snap_dist)
+  # bb_wbt_pourpoints(pourpoint_file, flow_acc_file,
+  #                   snapped_pourpoint_file, snap_dist = bbopt$pourpoint_snap_dist)
 
   ## reconcile snaps where points jump across junctions to another reachID
   # restore point coordinates to original when this happens
   # alternatively could just delete the points if they snap that far
-  snapped_pourpoints <- read_sf(snapped_pourpoint_file)
-  temp <- suppressWarnings(st_intersection(snapped_pourpoints,rivershp))
-  temp <- temp[temp$reachID != temp$reachID.1,]
-  if (nrow(temp)>0) {
-    for (i in 1:nrow(temp)) {
-      snapped_pourpoints[snapped_pourpoints$pointid == temp$pointid[i],]$geometry <-
-        pourpoints[pourpoints$pointid == temp$pointid[i],]$geometry
-
-    }
-  }
-  unlink(snapped_pourpoint_file)
-  write_sf(snapped_pourpoints,snapped_pourpoint_file)
-  rm(pourpoints)
+  # snapped_pourpoints <- read_sf(snapped_pourpoint_file)
+  # temp <- suppressWarnings(st_intersection(snapped_pourpoints,rivershp))
+  # temp <- temp[temp$reachID != temp$reachID.1,]
+  # if (nrow(temp)>0) {
+  #   for (i in 1:nrow(temp)) {
+  #     snapped_pourpoints[snapped_pourpoints$pointid == temp$pointid[i],]$geometry <-
+  #       pourpoints[pourpoints$pointid == temp$pointid[i],]$geometry
+  #
+  #   }
+  # }
+  # unlink(snapped_pourpoint_file)
+  # write_sf(snapped_pourpoints,snapped_pourpoint_file)
+  # rm(pourpoints)
   # rm(snapped_pourpoints)
+
+  # skip snapping and just wriite pourpoints as snapped file
+  unlink(snapped_pourpoint_file)
+  st_write(pourpoints, snapped_pourpoint_file)
 
 
   ### HAND calculations -----
 
   # proceed with delineation and hand raster stuff
   # get catchments (drainage basins for each stream point for HAND calculation)
-  fn_catchment_ras <- bb_get_catchmentshandraster(workingfolder = workingfolder, returnobject = FALSE)
+  fn_catchment_ras <- bb_get_catchmentshandraster(workingfolder,returnobject=FALSE)
   fn_catchment_vec <- bb_get_catchmentshandshp(workingfolder = workingfolder, returnobject = FALSE)
   catchments <- bb_wbt_catchment(snapped_pourpoint_file, flow_dir_file,
                                  fn_catchment_ras, fn_catchment_vec, return_vector = TRUE)
 
-  ## read catchments from raster and polygonize, merge
-  ### note that the bb_wbt_catchment vectorization fails if discontiguous features
-  tfout <- tempfile(fileext=".shp")
-  suppressMessages(qgis_run_algorithm(algorithm = "gdal:polygonize",
-                                      INPUT=fn_catchment_ras,
-                                      OUTPUT=tfout))
+  ## rewrite raster with the same dimensions as dem into handpourpointIDraster, leave atchmentshandraster as the raw one
+  catchmentraster <- terra::rast(fn_catchment_ras)
+  dem <- bb_get_demraster(workingfolder)
+  catchmentrr <- terra::resample(catchmentraster,dem,method='mode')
+  writeRaster(catchmentrr, bb_get_handpourpointIDraster(workingfolder, returnobject=FALSE), overwrite=TRUE)
+  rm(catchmentraster)
 
-  catchments <- read_sf(tfout)
-  catchments$pointid <- catchments$DN
+  ## calculate zdrainage for catchments from raster (cleaned up version, only uses rasters no vectors)
+  mdem <- as.matrix(dem)
+  mcatchmentrr <- as.matrix(catchmentrr)
+  if(length(mdem)!=length(mcatchmentrr)) {
+    stop("DEM and catchmentrr must have the same length")
+  }
 
-  # merge all similar pointid
-  catchments <- catchments %>%
-    group_by(pointid) %>%
-    summarise(geometry = st_union(geometry),
-              .groups="drop")
+  ## mask by channelws if using channel polygon
+  if (use_channelws) {
+    # if using the channel water surface, then mask it before calculating zdrainage
+    channelrr <- bb_get_channelwsraster(workingfolder)
+    mchannelrr <- as.matrix(channelrr)
+    if (!all(length(mdem) == c(length(mcatchmentrr), length(mchannelrr)))) {
+      stop("Input rasters are of different dimensions between dem, channel ws raster, and handpourpointID raster, check inputs")
+    }
 
-  # rename VALUE as pointid to reduce ambiguity
-  # cc <- colnames(catchments)
-  # if ("VALUE" %in% cc) {colnames(catchments) <- gsub(pattern="VALUE", replacement = "pointid", x=cc)}
+    # Mask DEM to channel==1 as one-off if using channel_ws
+    mask <- mchannelrr == 1
+    mdem <- mdem[mask]
+    mcatchmentrr <- mcatchmentrr[mask]
+  }
 
-  ## catchments_streamnodes VALUE is the INDEX of the streamnodes pointid - updated with whitebox v2.4.0
-  # catchments$pointid <- snapped_pourpoints[catchments$VALUE,]$pointid
+  # Split DEM values by catchment ID
+  dem_by_id <- split(mdem, mcatchmentrr)
 
-  # rasterize the snapped pour point IDs from HAND
-  # note that dem is read in as raster here to support fasterize
-  # dem <- raster::raster(bb_get_demraster(workingfolder, returnobject = FALSE))
-  # pp_id_raster <- fasterize(sf=catchments, raster=dem, field='pointid',fun='first')
-  ## terra alternative, about 5x slower it seems
-  dem <- bb_get_demraster(workingfolder, returnobject = TRUE)
-  pp_id_raster <- terra::rasterize(x=catchments, y=dem, field='pointid',fun='min')
-  pp_id_raster_file <- bb_get_handpourpointIDraster(workingfolder = workingfolder, returnobject = FALSE)
-  writeRaster(pp_id_raster, filename = bb_get_handpourpointIDraster(workingfolder,returnobject = FALSE), overwrite=overwrite)
-  rm(pp_id_raster)
+  # Compute quantiles
+  qvals <- lapply(dem_by_id, quantile, probs = channelws_percentile, na.rm = TRUE)
 
-  ## get minimum DEM value in each catchment area ----
-  ## catchments have IDs in the VALUE field
-  # note: exactextractr and native terra::extract or raster::extract can't seem to handle 'multipart'' polygons with
-  # small squares diagonally attached to other polygon bodies
-  # seems to be better handled by QGIS algorithms
-  tfpp <- tempfile(fileext=".shp")
-  tfout <- tempfile(fileext=".shp")
-  write_sf(catchments, tfpp, overwrite=TRUE)
-  suppressMessages(qgis_run_algorithm(algorithm = "native:zonalstatisticsfb",
-                                      INPUT=tfpp,
-                                      INPUT_RASTER=bb_get_demraster(bbopt$workingfolder,returnobject = FALSE),
-                                      RASTER_BAND=1,
-                                      COLUMN_PREFIX='zdrain',
-                                      STATISTICS=c(5),
-                                      OUTPUT=tfout))
-  catchment_temp <- read_sf(tfout)
-  # catchments$zdrainage <- terra::extract(dem,catchments,fun="min")[,2] # exactextractr::exact_extract(x=dem, y=catchments, fun='min')
-  catchments$zdrainage <- catchment_temp$zdrainmin
-  rm(catchment_temp)
-  sf::write_sf(catchments,fn_catchment_vec, overwrite=overwrite)
+  # compute zdrainage by reclass
+  rcl <- cbind(
+    from = as.numeric(names(qvals)),
+    to   = as.numeric(qvals)
+  )
+  zdrainage_raster <- classify(catchmentrr, rcl)
 
   # use rasterize to process zdrainage
-  zdrainage_raster <- terra::rasterize(x=catchments, y=dem, field='zdrainage',fun='min')
-  rm(catchments)
-  zdrainage_raster_file <- bb_get_zdrainageraster(workingfolder = workingfolder, returnobject = FALSE)
-  writeRaster(zdrainage_raster, filename = zdrainage_raster_file, overwrite=overwrite)
+  # zdrainage_raster <- terra::rasterize(x=catchments, y=dem, field='zdrainage',fun='min')
+  # rm(catchments)
+  # zdrainage_raster_file <- bb_get_zdrainageraster(workingfolder = workingfolder, returnobject = FALSE)
+  # writeRaster(zdrainage_raster, filename = zdrainage_raster_file, overwrite=overwrite)
 
   # compute hand raster
   # hand_raster <- raster::overlay(dem,
@@ -277,6 +284,10 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
 
   hand_raster_file <- bb_get_handraster(workingfolder = workingfolder, returnobject = FALSE)
   writeRaster(hand_raster, filename = hand_raster_file, overwrite=overwrite)
+
+  ## optionally set all channel wsvalues to zero xxx
+
+  ## optionally set all rivershp items to hand of zero xxx
 
   ## check hand values, consider recommending increasing sample distance
   if (min(hand_raster[!is.na(hand_raster)], na.rm=TRUE) < -0.1) {
