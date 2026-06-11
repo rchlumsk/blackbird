@@ -2277,6 +2277,129 @@ bb_drop_inconsistent_geomtypes = function(x, keeptype="LINESTRING") {
 }
 
 
+#' @title Computes the downid of a set of points
+#' @param pp sf of points
+#' @param rivershp sf of lines with reachID attribute on which points were sampled
+#' @return {x sf object of points with the downid attribute added}
+#' @importFrom sf st_write st_zm st_snap st_nearest_feature st_geometry st_sfc st_line_project st_crs st_as_sf st_drop_geometry
+#' @importFrom terra extract
+#' @importFrom sfnetworks as_sfnetwork activate
+#' @importFrom tidygraph as_tibble
+#' @importFrom dplyr mutate filter arrange select rename left_join pull row_number
+#' @importFrom purrr map_int map2_dbl
+#' @importFrom igraph as.igraph bfs
+bb_network_calcdownid = function(pp, rivershp=NULL) {
+
+  snapped_streamnodes <- pp
+  rm(pp)
+
+  if (length(unique(snapped_streamnodes$pointid))!=nrow(snapped_streamnodes)) {
+    stop("streamnodes have non-unique IDs, double check data or assign new IDs")
+    # snapped_streamnodes$pointid <- seq_len(nrow(snapped_streamnodes))
+  }
+
+  # 1. Build directed sfnetwork
+  net <- as_sfnetwork(rivershp, directed = TRUE) %>%
+      activate("edges") %>%
+      mutate(edge_id = row_number())
+
+  edges_tbl <- net %>%
+    activate("edges") %>%
+    as_tibble() %>%
+    mutate(from_node = from,
+           to_node   = to)
+
+  # 2. Snap points and attach edge_id
+  snapped_pts <- st_snap(snapped_streamnodes, rivershp, tolerance = 1)
+  snapped_pts$edge_id <- st_nearest_feature(snapped_pts, rivershp)
+
+  # 3. Compute distance along each edge using st_line_project()
+  snapped_pts$dist_on_edge <- map2_dbl(
+    snapped_pts$edge_id,
+    st_geometry(snapped_pts),
+    ~ {
+      line_geom  <- st_geometry(rivershp)[[.x]]
+      point_geom <- .y
+
+      line_sfc  <- st_sfc(line_geom,  crs = st_crs(rivershp))
+      point_sfc <- st_sfc(point_geom, crs = st_crs(rivershp))
+
+      as.numeric(st_line_project(line_sfc, point_sfc))
+    }
+  )
+
+  # 4. Build igraph for downstream traversal
+  g <- as.igraph(net)
+
+  # 5. For each point, find the next downstream point (downid)
+  snapped_pts$downid <- map_int(
+    seq_len(nrow(snapped_pts)),
+    function(i) {
+
+      this_edge  <- snapped_pts$edge_id[i]
+      this_dist  <- snapped_pts$dist_on_edge[i]
+      this_point <- snapped_pts$pointid[i]
+
+      #--------------------------------------------------------
+      # 5A — First try: next point on the SAME edge
+      #--------------------------------------------------------
+
+      same_edge_pts <- snapped_pts %>%
+        filter(edge_id == this_edge,
+               dist_on_edge > this_dist) %>%
+        arrange(dist_on_edge)
+
+      if (nrow(same_edge_pts) > 0) {
+        return(same_edge_pts$pointid[1])
+      }
+
+      #--------------------------------------------------------
+      # 5B — Otherwise: find next edge downstream
+      #--------------------------------------------------------
+
+      dn_node <- edges_tbl$to_node[this_edge]
+
+      bfs_res <- igraph::bfs(
+        graph = g,
+        root = dn_node,
+        mode = "out",
+        unreachable = FALSE
+      )
+
+      visited_nodes <- bfs_res$order[!is.na(bfs_res$order)]
+
+      dn_edges <- edges_tbl %>%
+        filter(from_node %in% visited_nodes) %>%
+        pull(edge_id)
+
+      # Find the first point on any downstream edge
+      dn_pts <- snapped_pts %>%
+        filter(edge_id %in% dn_edges) %>%
+        arrange(edge_id, dist_on_edge)
+
+      if (nrow(dn_pts) == 0) return(NA_integer_)
+
+      dn_pts$pointid[1]
+    }
+  )
+
+  # 6. Result: snapped_pts now has pointid and downid
+  snapped_pts[is.na(snapped_pts$downid),]$downid <- -1 # replace NA downid with -1
+  snapped_streamnodes <- snapped_pts[,c("pointid","reachID","rchdwnID","geometry","downid")]
+  rm(snapped_pts)
+
+  return(snapped_streamnodes)
+}
+
+#' @title Checks whether a node is upstream of another
+#' @param a nodeID to check if it is upstream (i.e, is a upstream of b)
+#' @param b nodeID to check against (i.e, is a upstream of b)
+#' @param g igraph network object
+#' @return {boolean whether a is upstrea of b}
+#' @noRd
+is_upstream <- function(a, b, g) {
+  b %in% subcomponent(g, a, mode = "out")
+}
 
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ### BLACKBIRD SUPPORT UTILITIES ----
@@ -3184,7 +3307,7 @@ bb_write_catchmentstreamnodes_geojson <- function(bbopt=NULL,outputfolder=NULL, 
 #' @export bb_compute_preproc_hydprops
 bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
                                     catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
-                                    catchmentstack=NULL, applyfuzzy=FALSE) {
+                                    catchmentstack=NULL, applyfuzzy=FALSE, skipheadwater=FALSE) {
 
 
 
@@ -3218,6 +3341,30 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     ind2 <- which(catchment == sdf$nodeID[i])
   } else {
     ind2 <- which(catchmentstack[i,] == sdf$nodeID[i])
+  }
+
+  if (skipheadwater & sdf$upnodeID1 == -1) {
+    preproc_table$Area               <- 0.0
+    preproc_table$WetPerimeter       <- 0.0
+    preproc_table$HRadius            <- 0.0
+    preproc_table$K_Total            <- 0.0
+    preproc_table$alpha              <- 0.0
+    preproc_table$Manning_Composite  <- 0.0
+    preproc_table$Length_Effective   <- 0.0
+    preproc_table$TopWidth           <- 0.0
+    preproc_table$HydDepth           <- 0.0
+    preproc_table$K_Total_areaconv   <- 0.0
+    preproc_table$K_Total_disconv    <- 0.0
+    preproc_table$K_Total_roughconv  <- 0.0
+    preproc_table$alpha_areaconv     <- 0.0
+    preproc_table$alpha_disconv      <- 0.0
+    preproc_table$alpha_roughconv    <- 0.0
+    preproc_table$nc_equalforce      <- 0.0
+    preproc_table$nc_equalvelocity   <- 0.0
+    preproc_table$nc_wavgwp          <- 0.0
+    preproc_table$nc_wavgarea        <- 0.0
+    preproc_table$nc_wavgconv        <- 0.0
+    return(preproc_table)
   }
 
   for (j in 1:length(bbopt$Hseq)) {
@@ -3451,26 +3598,26 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
       }
     }
 
-    preproc_table$Area[j]         <- A1D
-    preproc_table$WetPerimeter[j] <- P1D
-    preproc_table$HRadius[j]      <- Rh1D
-    preproc_table$K_Total[j] <- K1D
-    preproc_table$alpha[j] <- alpha
-    preproc_table$Manning_Composite[j] <- nc
-    preproc_table$Length_Effective[j] <- Leff
-    preproc_table$TopWidth[j] <- T1D
-    preproc_table$HydDepth[j] <- HyD1D
-    preproc_table$K_Total_areaconv[j] <- K_areaweighted_1D
-    preproc_table$K_Total_disconv[j] <- K_disc_1D
-    preproc_table$K_Total_roughconv[j] <- K_roughzone_1D
-    preproc_table$alpha_areaconv[j] <- alpha_areaconv
-    preproc_table$alpha_disconv[j] <- alpha_disconv
-    preproc_table$alpha_roughconv[j] <- alpha_roughconv
-    preproc_table$nc_equalforce[j] <- nc_equalforce
-    preproc_table$nc_equalvelocity[j] <- nc_equalvelocity
-    preproc_table$nc_wavgwp[j] <- nc_wavgwp
-    preproc_table$nc_wavgarea[j] <- nc_wavgarea
-    preproc_table$nc_wavgconv[j] <- nc_wavgconv
+    preproc_table$Area[j]         <- round(A1D,3)
+    preproc_table$WetPerimeter[j] <- round(P1D,3)
+    preproc_table$HRadius[j]      <- round(Rh1D,3)
+    preproc_table$K_Total[j] <- round(K1D,3)
+    preproc_table$alpha[j] <- round(alpha,3)
+    preproc_table$Manning_Composite[j] <- round(nc,3)
+    preproc_table$Length_Effective[j] <- round(Leff,3)
+    preproc_table$TopWidth[j] <- round(T1D,3)
+    preproc_table$HydDepth[j] <- round(HyD1D,3)
+    preproc_table$K_Total_areaconv[j] <- round(K_areaweighted_1D,3)
+    preproc_table$K_Total_disconv[j] <- round(K_disc_1D,3)
+    preproc_table$K_Total_roughconv[j] <- round(K_roughzone_1D,3)
+    preproc_table$alpha_areaconv[j] <- round(alpha_areaconv,3)
+    preproc_table$alpha_disconv[j] <- round(alpha_disconv,3)
+    preproc_table$alpha_roughconv[j] <- round(alpha_roughconv,3)
+    preproc_table$nc_equalforce[j] <- round(nc_equalforce,3)
+    preproc_table$nc_equalvelocity[j] <- round(nc_equalvelocity,3)
+    preproc_table$nc_wavgwp[j] <- round(nc_wavgwp,3)
+    preproc_table$nc_wavgarea[j] <- round(nc_wavgarea,3)
+    preproc_table$nc_wavgconv[j] <- round(nc_wavgconv,3)
 
   }
   return(preproc_table)

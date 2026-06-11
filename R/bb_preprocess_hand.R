@@ -51,6 +51,7 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
                                removesinks_method="breach_leastcost",
                                use_channelws=FALSE,
                                channelws_percentile=0,
+                               channelws_setzero=FALSE,
                                # removesinks_dist=NULL,
                                # pourpoint_snap_dist=NULL,
                                overwrite=TRUE, return_raster=TRUE) {
@@ -140,9 +141,20 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
   pourpoints <- bb_sample_linepoints_multiple(lineshp = rivershp, pointdist = bbopt$sample_linepoints_dist,
                                               firstpoint = FALSE, lastpoint = FALSE,
                                               min_end_offset = demres,
-                                              add_info_cols = c("reachID")) # keep reachID for interp in postproc
+                                              add_info_cols = c("reachID","downID")) # keep reachID for interp in postproc
   pourpoints <- dplyr::distinct(pourpoints)
   pourpoints$pointid <- seq(1,nrow(pourpoints))
+  colnames(pourpoints) <- gsub("downID","rchdwnID", colnames(pourpoints)) # replace this downID with the reachdwnID
+
+  # if using interp hand, compute downid
+  # if (grep("interp", bbopt$interpolation_postproc_method)==1) {
+  #   pourpoints <- bb_network_calcdownid(pourpoints,rivershp)
+  # } else {
+  #   warning("Since bbopt$interpolation_postproc_method does not contain an interp method, downid on HAND pourpoints not computed")
+  # }
+
+  pourpoints <- bb_network_calcdownid(pourpoints,rivershp)
+  colnames(pourpoints) <- gsub("downid","downID",colnames(pourpoints)) # for matching later attributes
 
   # replace pointid with hpointid
   # colnames(pourpoints) <- c("hpointid",colnames(pourpoints)[-1])
@@ -153,38 +165,38 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
 
   # compute downID for each pourpoint, even if out of snaps
   # generally assume that flow acc is higher in downstream
-  flowacc <- terra::rast(flow_acc_file) # bb_get_flowaccraster(bbopt$workingfolder, returnobject = TRUE)
-  pourpoints$flowacc <- terra::extract(flowacc,pourpoints)[,2]
-  rm(flowacc)
-  pourpoints$downID <- NA
-  for (i in 1:nrow(rivershp)) {
-    temp <- pourpoints[pourpoints$reachID == rivershp$reachID[i],]
-    reorder <- FALSE
-    if (nrow(temp) >8) { # use average of 4 points
-      if (mean(temp$flowacc[1:4],na.rm=TRUE) > mean(temp$flowacc[(nrow(temp)-3):(nrow(temp))],na.rm=TRUE)) {
-        # reorder in descending order
-        reorder <- TRUE
-      } # else continue
-    } else { # use first and last points
-      if (temp$flowacc[1] > temp$flow[nrow(temp)]) {
-        # reorder in descending order
-        reorder <- TRUE
-      } # else continue
-    }
-    # reorder points if needed
-    if (reorder) {
-      temp <- temp[order(-temp$pointid),]
-      temp$pointid <- seq(min(temp$pointid),nrow(temp)+min(temp$pointid)-1)
-    }
-    # compute downID
-    temp$downID[nrow(temp)] <- -1
-    temp$downID[1:(nrow(temp)-1)] <- temp$pointid[2:nrow(temp)]
-    # replace pourpoints with temp
-    pourpoints <- rbind(
-      temp,
-      pourpoints[pourpoints$reachID != rivershp$reachID[i],]
-    )
-  }
+  # flowacc <- terra::rast(flow_acc_file) # bb_get_flowaccraster(bbopt$workingfolder, returnobject = TRUE)
+  # pourpoints$flowacc <- terra::extract(flowacc,pourpoints)[,2]
+  # rm(flowacc)
+  # pourpoints$downID <- NA
+  # for (i in 1:nrow(rivershp)) {
+  #   temp <- pourpoints[pourpoints$reachID == rivershp$reachID[i],]
+  #   reorder <- FALSE
+  #   if (nrow(temp) >8) { # use average of 4 points
+  #     if (mean(temp$flowacc[1:4],na.rm=TRUE) > mean(temp$flowacc[(nrow(temp)-3):(nrow(temp))],na.rm=TRUE)) {
+  #       # reorder in descending order
+  #       reorder <- TRUE
+  #     } # else continue
+  #   } else { # use first and last points
+  #     if (temp$flowacc[1] > temp$flow[nrow(temp)]) {
+  #       # reorder in descending order
+  #       reorder <- TRUE
+  #     } # else continue
+  #   }
+  #   # reorder points if needed
+  #   if (reorder) {
+  #     temp <- temp[order(-temp$pointid),]
+  #     temp$pointid <- seq(min(temp$pointid),nrow(temp)+min(temp$pointid)-1)
+  #   }
+  #   # compute downID
+  #   temp$downID[nrow(temp)] <- -1
+  #   temp$downID[1:(nrow(temp)-1)] <- temp$pointid[2:nrow(temp)]
+  #   # replace pourpoints with temp
+  #   pourpoints <- rbind(
+  #     temp,
+  #     pourpoints[pourpoints$reachID != rivershp$reachID[i],]
+  #   )
+  # }
 
   ####
 
@@ -281,6 +293,12 @@ bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,
   #                                zdrainage_raster,
   #                                fun=function(r1, r2){return(r1-r2)})
   hand_raster <- dem-zdrainage_raster
+
+  if (use_channelws & channelws_setzero) {
+    mhand <- as.matrix(hand_raster)
+    mhand[which(mchannelrr==1)] <- 0
+    values(hand_raster) <- mhand
+  }
 
   hand_raster_file <- bb_get_handraster(workingfolder = workingfolder, returnobject = FALSE)
   writeRaster(hand_raster, filename = hand_raster_file, overwrite=overwrite)

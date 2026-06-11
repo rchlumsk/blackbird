@@ -4,21 +4,39 @@
 #' Determines which streamnode boundaries overlap, and what the minimum HAND values are at each boundary.
 #'
 #' @param bbmodel blackbird model object
+#' @param subsetnodeIDs list of integer nodeIDs to compute transfer for
+#' @param writefile boolean whether to write the file directly to
 #' @return {snconndf which can be passed to \code{\link{bb_write_model_files_cpp}}}
+#'
+#' @details
+#' If using \code{writefile}, it will immediately write out the snconndf to a bbg format file
+#' without requiring the full model build to write with \code{\link{bb_write_model_files_cpp}}
+#'
+#' This function requires that catchments for streamnodes be delineated, as well as all precursor steps,
+#' such as DEM and HAND processing.
+#'
 #
 #' @examples
 #' # IOU examples
 #'
 #' @importFrom terra extract
-#' @improtFrom sf st_touches st_intersection st_as_sf st_buffer
+#' @importFrom sf st_touches st_intersection st_as_sf st_buffer
+#' @importFrom igraph graph_from_data_frame subcomponent
 #' @export bb_preprocess_snconndf
-bb_preprocess_snconndf <- function(bbmodel=NULL) {
+bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, writefile=FALSE) {
 
   if (is.null(bbmodel)) {
     stop("bbmodel is required")
   }
 
   bbopt <- bbmodel$bbopt
+
+  if (!file.exists(bb_get_catchmentsfromstreamnodesshp(bbopt$workingfolder,returnobject = FALSE))) {
+    stop("catchments_streamnodes must be processed first")
+  }
+  if (!file.exists(bb_get_handraster(bbopt$workingfolder,returnobject = FALSE))) {
+    stop("hand raster must be processed first")
+  }
 
   catchments_streamnodes <- bb_get_catchmentsfromstreamnodesshp(bbopt$workingfolder)
   hand <- bb_get_handraster(bbopt$workingfolder)
@@ -33,13 +51,28 @@ bb_preprocess_snconndf <- function(bbmodel=NULL) {
 
   mciddf <- structure(list(cellid = numeric(0), hh = numeric(0), ee = numeric(0),
     craster = integer(0), cellid2 = logical(0), hh2 = logical(0),
-    ee2 = logical(0), craster2 = logical(0)), row.names = integer(0), class = "data.frame")
+    ee2 = logical(0), craster2 = logical(0), transfer=numeric(0)), row.names = integer(0), class = "data.frame")
 
   dd <- data.frame(matrix(NA,nrow=0,ncol=5))
   colnames(dd) <- c("cid","adjcid","mindhand1","elev1","reachID")
   # k = 1 # tracking dd row entry
 
+  # get sdf and calculate igraph network
   sdf <- bbmodel$bbgeo$get_streamnodeList_as_dataframe()
+  g <- graph_from_data_frame(sdf[,c("nodeID","downnodeID")], directed = TRUE)
+  # is_upstream(a = 200, b = 219, g)
+  # is_upstream <- function(a, b) {
+  #   b %in% subcomponent(g, a, mode = "out")
+  # }
+
+  # check that all subsetnodeIDs are valid
+  if (!is.null(subsetnodeIDs)) {
+    if (any(subsetnodeIDs %notin% sdf$nodeID)) {
+      stop("invalid subsetnodeIDs found, check input against model geometry")
+    }
+  } else {
+    subsetnodeIDs <- sdf$nodeID
+  }
 
   headwaternodes <- sdf[sdf$upnodeID1==-1,]$nodeID
 
@@ -49,24 +82,33 @@ bb_preprocess_snconndf <- function(bbmodel=NULL) {
     cid <- catchments_streamnodes$pointid[i]
     downid <- catchments_streamnodes$downid[i]
 
+    # skip if headwater basin
     if (sdf$upnodeID1[i] == -1) {
       # cid is a headwater basin, skip
       next
     }
 
+    # skip if node is not in the subsetnodeID list
+    if (cid %notin% subsetnodeIDs) {
+      next
+    }
+
     # check streamnode IDs of touching cells, filter out any immediate downstream or upstream nodes
-    touchid <- sdf$nodeID[unlist(sf::st_touches(catchments_streamnodes$geometry[i], catchments_streamnodes$geometry))]
+    touchid <- sdf$nodeID[unlist(sf::st_is_within_distance(catchments_streamnodes$geometry[i], catchments_streamnodes$geometry,demres/2))]
     # remove self and any immediate upstream/downstream streamnodes
     touchid <- touchid[which(touchid %notin% c(cid, downid, sdf$upnodeID1[i], sdf$upnodeID2[i]))]
 
-    # xxx update to allow for spills US->DS nodes on same reach, but not DS->US
+    # remove any nodes that are upstream of cid
+    # isus <- unlist(lapply(touchid,FUN=function(x) {is_upstream(x,cid,g)}))
+    # touchid <-
+
 
     # remove any for which currentid is upstream or downstream of a junction to
-    blocked_reaches <- c(rivershp[which(rivershp$downID == catchments_streamnodes$reachID[i]),]$reachID, # which reaches drain to current reachID
-                         rivershp[which(rivershp$reachID == catchments_streamnodes$reachID[i]),]$downID, # downstream reachID
-                         catchments_streamnodes$reachID[i])                                              # current reachID (can't be on the same branch)
-    # update touchid based on blocked reaches
-    touchid <- touchid[which(sdf[sdf$nodeID %in% touchid, ]$reachID %notin% blocked_reaches)]
+    # blocked_reaches <- c(rivershp[which(rivershp$downID == catchments_streamnodes$reachID[i]),]$reachID, # which reaches drain to current reachID
+    #                      rivershp[which(rivershp$reachID == catchments_streamnodes$reachID[i]),]$downID, # downstream reachID
+    #                      catchments_streamnodes$reachID[i])                                              # current reachID (can't be on the same branch)
+    # # update touchid based on blocked reaches
+    # touchid <- touchid[which(sdf[sdf$nodeID %in% touchid, ]$reachID %notin% blocked_reaches)]
 
     # remove any headwater nodes it touches
     touchid <- touchid[which(touchid %notin% headwaternodes)]
@@ -110,6 +152,7 @@ bb_preprocess_snconndf <- function(bbmodel=NULL) {
             ciddf$ee2 <- NA
             ciddf$craster2 <- NA
             ciddf$reachID <- catchments_streamnodes$reachID[i]
+            ciddf$transfer <- 0
 
             ## for each row, find a matching pair
             for (k in 1:nrow(ciddf)) {
@@ -149,6 +192,15 @@ bb_preprocess_snconndf <- function(bbmodel=NULL) {
             # take cell with the min elev + hand (xxx if that is what we are doing)
             # ciddf <- ciddf[which(ciddf$ee+ciddf$hh-ciddf$hh2-ciddf$ee2 == min(ciddf$ee+ciddf$hh-ciddf$hh2-ciddf$ee2,na.rm=TRUE)),]
 
+            # update transfer status column
+            for (k in common_elements(which(!is.na(ciddf$craster)), which(!is.na(ciddf$craster2)))) {
+               if (is_upstream(ciddf[k,]$craster, ciddf[k,]$craster2, g)) {
+                ciddf$transfer[k] <- 1 # means that craster is upstream of craster2, transfer only allowed craster -> craster2
+               } else if (is_upstream(ciddf[k,]$craster2, ciddf[k,]$craster, g)) {
+                ciddf$transfer[k] <- -1 # means that craster2 is upstream of craster, transfer only allowed craster2 -> craster
+               }
+            }
+
             # merge ciddf to master
             if (nrow(mciddf)==0) {
               mciddf <- ciddf
@@ -171,7 +223,45 @@ bb_preprocess_snconndf <- function(bbmodel=NULL) {
   mciddf <- mciddf[!is.na(mciddf$ee2),]
 
   ## sort for writing
-  mciddf <- mciddf[order(mciddf$reachID, mciddf$craster, mciddf$craster2, mciddf$ee),]
+  snconndf <- mciddf[order(mciddf$reachID, mciddf$craster, mciddf$craster2, mciddf$ee),]
 
-  return(mciddf)
+  if (writefile) {
+    workingfolder <- bbmodel$bbopt$workingfolder
+    modelname <- "snconnndf_file"
+    ## write out full geometry info ----
+    outputfile <- file.path(workingfolder,"model",sprintf("%s.bbg",modelname))
+    # xxx replace this path with one that comes from the bb_get_object function
+    if (!dir.exists(file.path(workingfolder,"model"))) {
+      dir.create(file.path(workingfolder,"model"))
+    }
+    fc <- file(outputfile,open='w+')
+
+
+    writeLines("## Blackbird Geometry File (.bbg)",fc)
+    writeLines("# \n",fc)
+
+    # check if snconndf provided
+    if (!is.null(snconndf)) {
+      writeLines(sprintf("\n # :RedirectToFile %s_streamnodeconnections.bbg # add this to main bbg file",modelname), fc)
+    }
+
+    writeLines(":StreamnodeConnectionsTable",fc)
+    writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","HAND1","HAND2","elev1","elev2","reachID","transfer")),collapse="  "),fc)
+      for (j in 1:nrow(snconndf)) {
+        writeLines(sprintf("    %i %i %.4f %.4f %.4f %.4f %i %i",
+                           snconndf$craster[j],
+                           snconndf$craster2[j],
+                           snconndf$hh[j],
+                           snconndf$hh2[j],
+                           snconndf$ee[j],
+                           snconndf$ee2[j],
+                           snconndf$reachID[j],
+                           snconndf$transfer[j]
+                           ),fc)
+      }
+    writeLines(":EndStreamnodeConnectionsTable",fc)
+    close(fc)
+  }
+
+  return(snconndf)
 }

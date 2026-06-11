@@ -128,6 +128,7 @@ bb_write_model_files_cpp <- function(modelname="modelname",
                              snconndf$ee2[j],
                              snconndf$reachID[j]
                              ),fc)
+          # xxx maybe adding transfer here too
         }
       writeLines(":EndStreamnodeConnectionsTable",fc)
       close(fc)

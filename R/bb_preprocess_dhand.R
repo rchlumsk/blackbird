@@ -5,7 +5,7 @@
 #'
 #' @param workingfolder folder to write secondary spatial outputs to
 #' @param bbopt blackbird options class object (used to define the dhand depths)
-#' @param removesinks_method method to use in the sink removal algorihtm for dem condioning
+#' @param removesinks_method method to use in the sink removal algorithm for dem conditioning
 #' @param overwrite if \code{TRUE}, will overwrite any written files
 #'
 #' @return \item{\code{TRUE}}{when dhand rasters written to file}
@@ -207,6 +207,10 @@ bb_preprocess_dhand <- function(workingfolder=NULL,
     pp_id_raster_file <- bb_get_dhandraster(workingfolder,returnobject = FALSE,depth=dhand_depths[i],filetype="idraster")
     writeRaster(pp_id_raster, filename = pp_id_raster_file, overwrite=overwrite)
     rm(pp_id_raster)
+
+
+
+    # xxx update calculation here to match HAND with efficienct raster matrix calculations
 
 
     ## get minimum DEM value in each catchment area ----

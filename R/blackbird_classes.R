@@ -2107,7 +2107,8 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
     },
 
     compute_preprocessing_tables = function(bbopt, subsetNodeIDs = NULL, skip_extent_checks=FALSE,
-                                                runparallel=FALSE, applyfuzzy=FALSE, usefuzzyhand=FALSE) {
+                                                runparallel=FALSE, applyfuzzy=FALSE, usefuzzyhand=FALSE,
+                                                skipheadwater=FALSE) {
 
       # subsetNodeIDs = NULL
       # subsetNodeIDs = seq(188,195)
@@ -2597,7 +2598,8 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
 
                       # call R function to compute properties
                       preproc_table <- bb_compute_preproc_hydprops(i, bbopt, preproc_table, a, sdf,
-                                                                   catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength)
+                                                                   catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
+                                                                   skipheadwater=skipheadwater)
 
                       ## consider passing preproc_table right back to .self instead of writing to file, likely slowing things down
 
