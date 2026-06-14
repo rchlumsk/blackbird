@@ -62,6 +62,7 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   writeLines(paste(c("  :Attributes",colnames(sdf)),collapse="  "),fc)
   for (i in 1:nrow(sdf)) {
     writeLines(paste(c("    ",sdf[i,]), collapse="  "),fc)
+    # xxx add precision point control specific to different attributes
   }
   writeLines(":EndStreamnodes", fc)
 

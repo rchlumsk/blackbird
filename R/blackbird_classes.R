@@ -1850,49 +1850,53 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
 
       ## recompute stations from reach lengths
       ## xxx TO DO - add check that stationing has the downstream end as 0m, max length at upstream end
-      sdf <- .self$get_streamnodeList_as_dataframe()
-      sdf$station <- -99
 
-      reaches <- unique(sdf$reachID)
+      # xxx to do - replace with sfnetworks approach
 
-      for (j in 1:length(reaches)) {
-        sdff <- sdf[sdf$reachID == reaches[j],]
 
-        startid <- sdff[which(sdff$upnodeID1 %notin% sdff$nodeID),]$nodeID
-        sdff[sdff$nodeID == startid,]$station <-
-           sdff[sdff$nodeID == startid,]$us_reach_length1
-        lastid <- startid
-
-        if (nrow(sdff) > 1) {
-          for (i in 1:(nrow(sdff)-1)) {
-            startid <- sdff[sdff$nodeID == startid,]$downnodeID
-
-            if (startid %in% sdff$nodeID) {
-              sdff[sdff$nodeID == startid,]$station <-
-             sdff[sdff$nodeID == startid,]$us_reach_length1+
-              sdff[sdff$nodeID == lastid,]$station
-            } else {
-              warning(sprintf("ending loop, nodeID %s not found in sdff",startid))
-              break
-            }
-            lastid <- startid
-          }
-        } else if (nrow(sdff == 1)) {
-          sdff$station <- sdff$us_reach_length1
-        } else {
-          stop("gg$compute_reach_lengths: found an empty reach ID")
-        }
-
-        # update in sdf
-        sdf[sdf$reachID == reaches[j],]$station <-
-          sdff$station
-      }
-
-      # update station in geometry object
-      for (i in 1:len_nodes) {
-        .self$streamnodeList[[i]]$station <-
-          sdf$station[i]
-      }
+      # sdf <- .self$get_streamnodeList_as_dataframe()
+      # sdf$station <- -99
+      #
+      # reaches <- unique(sdf$reachID)
+      #
+      # for (j in 1:length(reaches)) {
+      #   sdff <- sdf[sdf$reachID == reaches[j],]
+      #
+      #   startid <- sdff[which(sdff$upnodeID1 %notin% sdff$nodeID),]$nodeID
+      #   sdff[sdff$nodeID == startid,]$station <-
+      #      sdff[sdff$nodeID == startid,]$us_reach_length1
+      #   lastid <- startid
+      #
+      #   if (nrow(sdff) > 1) {
+      #     for (i in 1:(nrow(sdff)-1)) {
+      #       startid <- sdff[sdff$nodeID == startid,]$downnodeID
+      #
+      #       if (startid %in% sdff$nodeID) {
+      #         sdff[sdff$nodeID == startid,]$station <-
+      #        sdff[sdff$nodeID == startid,]$us_reach_length1+
+      #         sdff[sdff$nodeID == lastid,]$station
+      #       } else {
+      #         warning(sprintf("ending loop, nodeID %s not found in sdff",startid))
+      #         break
+      #       }
+      #       lastid <- startid
+      #     }
+      #   } else if (nrow(sdff == 1)) {
+      #     sdff$station <- sdff$us_reach_length1
+      #   } else {
+      #     stop("gg$compute_reach_lengths: found an empty reach ID")
+      #   }
+      #
+      #   # update in sdf
+      #   sdf[sdf$reachID == reaches[j],]$station <-
+      #     sdff$station
+      # }
+      #
+      # # update station in geometry object
+      # for (i in 1:len_nodes) {
+      #   .self$streamnodeList[[i]]$station <-
+      #     sdf$station[i]
+      # }
 
       message(sprintf("Reach lengths and stations for geometry '%s' have been updated", .self$geomname))
       return(TRUE)
@@ -2649,6 +2653,11 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
           indsdf <- which(sdf$nodeID %in% uni)
 
           for(i in indsdf) {
+
+            if (i %% 100 ==0) {
+              message("iteration update: i = ",i)
+            }
+
             # reachshp_lens[i] <- as.numeric(sf::st_length(.self$streamnodeList[[i]]$reachshp))
             # if(as.integer(.self$get_streamnodeList_as_dataframe()["nodeID"][[1]][i]) %notin% uni) {
             #   next
@@ -2688,7 +2697,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
             # call R function to compute properties
             preproc_table <- bb_compute_preproc_hydprops(i, bbopt, preproc_table, a, sdf,
                                                          catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
-                                                         catchrs, applyfuzzy=applyfuzzy)
+                                                         catchrs, applyfuzzy=applyfuzzy,skipheadwater=skipheadwater)
 
             # .self$streamnodeList[[indsdf[i]]]$depthdf <- preproc_table
             .self$streamnodeList[[i]]$depthdf <- preproc_table

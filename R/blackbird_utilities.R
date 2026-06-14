@@ -2293,6 +2293,7 @@ bb_network_calcdownid = function(pp, rivershp=NULL) {
   snapped_streamnodes <- pp
   rm(pp)
 
+  # 0. Ensure each point has a unique pointid
   if (length(unique(snapped_streamnodes$pointid))!=nrow(snapped_streamnodes)) {
     stop("streamnodes have non-unique IDs, double check data or assign new IDs")
     # snapped_streamnodes$pointid <- seq_len(nrow(snapped_streamnodes))
@@ -2300,8 +2301,8 @@ bb_network_calcdownid = function(pp, rivershp=NULL) {
 
   # 1. Build directed sfnetwork
   net <- as_sfnetwork(rivershp, directed = TRUE) %>%
-      activate("edges") %>%
-      mutate(edge_id = row_number())
+    activate("edges") %>%
+    mutate(edge_id = row_number())
 
   edges_tbl <- net %>%
     activate("edges") %>%
@@ -2310,7 +2311,8 @@ bb_network_calcdownid = function(pp, rivershp=NULL) {
            to_node   = to)
 
   # 2. Snap points and attach edge_id
-  snapped_pts <- st_snap(snapped_streamnodes, rivershp, tolerance = 1)
+  # snapped_pts <- st_snap(snapped_streamnodes, rivershp, tolerance = 1)
+  snapped_pts <- snapped_streamnodes
   snapped_pts$edge_id <- st_nearest_feature(snapped_pts, rivershp)
 
   # 3. Compute distance along each edge using st_line_project()
@@ -2331,19 +2333,67 @@ bb_network_calcdownid = function(pp, rivershp=NULL) {
   # 4. Build igraph for downstream traversal
   g <- as.igraph(net)
 
-  # 5. For each point, find the next downstream point (downid)
-  snapped_pts$downid <- map_int(
+  # 5. Compute the closest downstream point for each node
+
+  # Precompute downstream edge lookup: from_node → edge_id(s)
+  downstream_edges <- edges_tbl %>%
+    group_by(from_node) %>%
+    summarise(next_edges = list(edge_id), .groups = "drop")
+
+  # Helper: get immediate downstream edges from a node
+  get_next_edges <- function(node) {
+    row <- downstream_edges[downstream_edges$from_node == node, ]
+    if (nrow(row) == 0) return(integer(0))
+    unlist(row$next_edges)
+  }
+
+  # Helper: recursively find the closest downstream point
+  find_downstream_point <- function(start_node) {
+
+    # queue for BFS-like traversal but restricted to *immediate* downstream edges only
+    queue <- start_node
+
+    visited <- integer(0)
+
+    while (length(queue) > 0) {
+
+      node <- queue[1]
+      queue <- queue[-1]
+
+      if (node %in% visited) next
+      visited <- c(visited, node)
+
+      # Get immediate downstream edges
+      next_edges <- get_next_edges(node)
+
+      # Check for points on these edges
+      pts <- snapped_pts %>%
+        filter(edge_id %in% next_edges) %>%
+        arrange(edge_id, dist_on_edge)
+
+      if (nrow(pts) > 0) {
+        return(pts$pointid[1])   # closest downstream point
+      }
+
+      # No points found → continue downstream
+      next_nodes <- edges_tbl$to_node[match(next_edges, edges_tbl$edge_id)]
+      queue <- c(queue, next_nodes)
+    }
+
+    return(NA_integer_)
+  }
+
+  # Apply to each point
+
+  snapped_pts$downid <- purrr::map_int(
     seq_len(nrow(snapped_pts)),
     function(i) {
 
-      this_edge  <- snapped_pts$edge_id[i]
-      this_dist  <- snapped_pts$dist_on_edge[i]
-      this_point <- snapped_pts$pointid[i]
+      this_edge <- snapped_pts$edge_id[i]
+      this_dist <- snapped_pts$dist_on_edge[i]
+      this_node <- edges_tbl$to_node[this_edge]
 
-      #--------------------------------------------------------
-      # 5A — First try: next point on the SAME edge
-      #--------------------------------------------------------
-
+      # 1. Try same edge first
       same_edge_pts <- snapped_pts %>%
         filter(edge_id == this_edge,
                dist_on_edge > this_dist) %>%
@@ -2353,38 +2403,15 @@ bb_network_calcdownid = function(pp, rivershp=NULL) {
         return(same_edge_pts$pointid[1])
       }
 
-      #--------------------------------------------------------
-      # 5B — Otherwise: find next edge downstream
-      #--------------------------------------------------------
-
-      dn_node <- edges_tbl$to_node[this_edge]
-
-      bfs_res <- igraph::bfs(
-        graph = g,
-        root = dn_node,
-        mode = "out",
-        unreachable = FALSE
-      )
-
-      visited_nodes <- bfs_res$order[!is.na(bfs_res$order)]
-
-      dn_edges <- edges_tbl %>%
-        filter(from_node %in% visited_nodes) %>%
-        pull(edge_id)
-
-      # Find the first point on any downstream edge
-      dn_pts <- snapped_pts %>%
-        filter(edge_id %in% dn_edges) %>%
-        arrange(edge_id, dist_on_edge)
-
-      if (nrow(dn_pts) == 0) return(NA_integer_)
-
-      dn_pts$pointid[1]
+      # 2. Otherwise follow immediate downstream edges only
+      find_downstream_point(this_node)
     }
   )
 
+  # Replace NA with -1
+  snapped_pts$downid[is.na(snapped_pts$downid)] <- -1
+
   # 6. Result: snapped_pts now has pointid and downid
-  snapped_pts[is.na(snapped_pts$downid),]$downid <- -1 # replace NA downid with -1
   snapped_streamnodes <- snapped_pts[,c("pointid","reachID","rchdwnID","geometry","downid")]
   rm(snapped_pts)
 
@@ -3343,7 +3370,7 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     ind2 <- which(catchmentstack[i,] == sdf$nodeID[i])
   }
 
-  if (skipheadwater & sdf$upnodeID1 == -1) {
+  if (skipheadwater & sdf$upnodeID1[i] == -1) {
     preproc_table$Area               <- 0.0
     preproc_table$WetPerimeter       <- 0.0
     preproc_table$HRadius            <- 0.0
