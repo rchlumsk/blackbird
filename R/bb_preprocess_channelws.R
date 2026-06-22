@@ -40,7 +40,7 @@ bb_preprocess_channelws <- function(input=NULL, workingfolder=NULL,
       }
 
     }
-  } else if ("SpatRaster" %notin% class(input) & "sf" %noin% class(input)) {
+  } else if ("SpatRaster" %notin% class(input) & "sf" %notin% class(input)) {
       stop("dem must be a SpatRaster object (from the terra package), sf object, or a file path to one")
   }
 

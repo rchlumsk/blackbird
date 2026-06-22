@@ -2611,7 +2611,7 @@ bb_generate_flow_table <- function(geometry=NULL) {
 #' @export bb_get_fileinfo
 bb_get_fileinfo <- function(objectname=NULL) {
 
-  sdf <- data.frame(matrix(ncol=3,nrow=50,byrow=TRUE,
+  sdf <- data.frame(matrix(ncol=3,nrow=51,byrow=TRUE,
                            data=c(
                              c("rivershp",                    "bb_rivershp.shp","sf"),
                              # c("genrivershp",                 "bb_generated_rivershp.shp","sf"),
@@ -2629,6 +2629,8 @@ bb_get_fileinfo <- function(objectname=NULL) {
 
                              c("channelwsraster",             "bb_channel_ws.tif","SpatRaster"),
                              c("channelwsshp",                "bb_channel_ws.shp","sf"),
+
+                             c("handmaskedraster",            "bb_handmasked.tif","SpatRaster"),
 
                              c("euclideandistraster",         "bb_euclideandist.tif","SpatRaster" ),
                              c("euclideandistcondraster",     "bb_euclideandist_conditioned.tif","SpatRaster" ),
@@ -2853,6 +2855,13 @@ bb_get_channelwsraster <- function(workingfolder=NULL, returnobject=TRUE, includ
 #' @rdname bb_get
 bb_get_channelwsshp <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
   objectname <- "channelwsshp"
+  result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
+  return(result)
+}
+
+#' @rdname bb_get
+bb_get_handmaskedraster <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
+  objectname <- "handmaskedraster"
   result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
   return(result)
 }
