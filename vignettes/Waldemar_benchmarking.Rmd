@@ -28,7 +28,10 @@ library(terra)
 library(qgisprocess)
 library(lwgeom)
 library(ggplot2)
+library(sfnetworks)
+library(igraph)
 library(tictoc)
+library(purrr)
 
 workingfolder <- "waldemarworking2"
 modelname="waldemar"
@@ -187,7 +190,7 @@ Build our model geometry object.
 catchmentList <- bb_preprocess_catchments_streamnodes(bbopt=bbopt)
 
 rivershp <- bb_get_rivershp(returnobject = TRUE,workingfolder = workingfolder)
-myriverreachList <- bb_preprocess_riverreachlist(workingfolder = workingfolder)
+myriverreachList <- bb_preprocess_riverreachlist(bbopt=bbopt)
 
 gg <- blackbird::bb_geometry$new(geomname="Waldemar",
                            streamnodeList=catchmentList,

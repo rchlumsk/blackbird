@@ -488,6 +488,8 @@ streamnode <- setRefClass("streamnode",
                                                                bbopt=bbopt)
                   }
 
+                  # add exceptions here for bridge hydraulics? xxx
+
                   # now compute the flow-driven properties
                   mm <- .self$compute_basic_flow_properties(Flow=Flow,
                                                         mm=mm,
