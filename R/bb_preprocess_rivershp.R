@@ -63,8 +63,8 @@ bb_preprocess_rivershp <- function(rivershp=NULL, workingfolder=NULL, return_shp
   # get sample_linepoints_dist if NULL, estimate from DEM resolution
   if (is.null(sample_linepoints_dist)) {
     demres <- terra::res(dem)
-    if (demres[1] != demres[2]) {
-      stop("DEM is not square resolution, should ideally be square (xres=yres)")
+    if (round(res(dem)[1],3) != round(res(dem)[2],3)) {
+      stop("dem raster is not square; please resample with raster::resample or just terra::aggregate to obtain a square resolution dem")
     }
     sample_linepoints_dist <- demres[1]
     # (demres[1]+demres[2])/2 # checks for dem to be square, so can simplify this

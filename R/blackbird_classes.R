@@ -2123,6 +2123,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
       # runparallel=FALSE
       # applyfuzzy=FALSE
       # usefuzzyhand=FALSE
+      # skipheadwater=FALSE
       # .self <- gg
 
       if (runparallel & applyfuzzy) {
@@ -2393,6 +2394,12 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
           stop("need to crop/extend dem raster to match extents of catchment raster before proceeding")
         }
 
+        # calculate planar areas before reducing
+        # templist <- bb_calc_area_planar(dem_raster)
+        # Ap <- templist[[1]]
+        # dv <- templist[[2]]
+        # rm(templist)
+
         dem <- terra::as.matrix(dem_raster)
         # dem <- dem[catchment %in% uni & !is.na(catchment)]
         dem <- dem[ind]
@@ -2403,6 +2410,10 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         } else {
           stop("dem must be square resolution")
         }
+
+        # subset Ap and dvec
+        # Ap <- Ap[ind]
+        # dv <- dv[ind]
 
         ## add check for number of rows and cols instead of ext?
         manningsn_raster <- terra::rast(bb_get_manningsnraster(workingfolder = workingfolder, returnobject = FALSE))
@@ -2432,16 +2443,17 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         # reachlength <- reachlength[catchment %in% uni & !is.na(catchment)]
         reachlength <- reachlength[ind]
         rm(reachlength_raster)
-        # }
 
-        # slope_raster <- terra::rast(bb_get_sloperaster(workingfolder,returnobject = FALSE))
-        # if (!skip_extent_checks & terra::ext(slope_raster) != terra::ext(catchment_raster)) {
-        #   stop("need to crop/extend slope raster to match extents of catchment raster before proceeding")
-        # }
-        # slope <- terra::as.matrix(slope_raster)
-        # # slope <- slope[catchment %in% uni & !is.na(catchment)]
-        # slope <- slope[ind]
-        # rm(slope_raster)
+        slope_raster <- terra::rast(bb_get_sloperaster(workingfolder = workingfolder, returnobject = FALSE))
+        if (!identical(dim(slope_raster), dim(catchment_raster))) {
+          stop("dimensions of slope_raster raster not equal to catchment raster")
+        }
+        if (!skip_extent_checks & terra::ext(slope_raster) != terra::ext(catchment_raster)) {
+          stop("need to crop/extend slope raster to match extents of catchment raster before proceeding")
+        }
+        sloper <- terra::as.matrix(slope_raster)
+        sloper <- sloper[ind]
+        rm(slope_raster)
 
         print("read reach length")
 
@@ -2456,7 +2468,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         #   }
         # }
         # newind <- which(Reduce(`&`, lapply(list(dem, hand, manningsn, reachlength), Negate(is.na))))
-        newind <- which(Reduce(`&`, lapply(list(dem, hand, manningsn, reachlength), Negate(is.na)))) # took out reachlength temporarily xxx
+        newind <- which(Reduce(`&`, lapply(list(dem, hand, manningsn, reachlength, sloper), Negate(is.na)))) # took out reachlength temporarily xxx
         # newind <- which(complete.cases(data.frame(dem, hand, manningsn, reachlength)))
 
 
@@ -2479,7 +2491,9 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
           handid <- handid[newind]
           manningsn <- manningsn[newind]
           reachlength <- reachlength[newind]
-          # slope <- slope[newind]
+          sloper <- sloper[newind]
+          # Ap <- Ap[newind]
+          # dv <- dv[newind]
 
           ## checks if any empty
           for (ii in uni) {
@@ -2604,8 +2618,8 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
 
                       # call R function to compute properties
                       preproc_table <- bb_compute_preproc_hydprops(i, bbopt, preproc_table, a, sdf,
-                                                                   catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
-                                                                   skipheadwater=skipheadwater)
+                                                         catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
+                                                         Ap, dv, catchrs, applyfuzzy=applyfuzzy,skipheadwater=skipheadwater)
 
                       ## consider passing preproc_table right back to .self instead of writing to file, likely slowing things down
 
@@ -2681,6 +2695,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
             .self$streamnodeList[[i]]$depthdf$Manning_Composite <- 0
             .self$streamnodeList[[i]]$depthdf$Length_Effective <- 0
             .self$streamnodeList[[i]]$depthdf$TopWidth <- 0
+
             .self$streamnodeList[[i]]$depthdf$HydDepth <- 0
             .self$streamnodeList[[i]]$depthdf$K_Total_areaconv <- 0
             .self$streamnodeList[[i]]$depthdf$K_Total_disconv <- 0
@@ -2699,7 +2714,12 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
             # call R function to compute properties
             preproc_table <- bb_compute_preproc_hydprops(i, bbopt, preproc_table, a, sdf,
                                                          catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
+                                                         sloper,
+                                                         # Ap, dv,
                                                          catchrs, applyfuzzy=applyfuzzy,skipheadwater=skipheadwater)
+
+            # temp
+            preproc_table$Area
 
             # .self$streamnodeList[[indsdf[i]]]$depthdf <- preproc_table
             .self$streamnodeList[[i]]$depthdf <- preproc_table
@@ -2707,7 +2727,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         }
 
       }
-      .self$check_preprocessing_tables()
+      .self$check_preprocessing_tables(subsetNodeIDs)
       return(TRUE)
     },
 
@@ -2822,21 +2842,26 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
       return(TRUE)
     },
 
-    check_preprocessing_tables = function() {
+    check_preprocessing_tables = function(subsetNodeIDs=NULL) {
       len_nodes <- .self$get_streamnodelist_length()
       issuecount <- 0
       sdf <- .self$get_streamnodeList_as_dataframe()
+      if (any(sdf$nodeID %notin% subsetNodeIDs) & !is.null(subsetNodeIDs)) {
+        message("Checking just a subset of node IDs")
+        sdf <- sdf[which(sdf$nodeID %in% subsetNodeIDs)]
+      }
       for (i in 1:nrow(sdf)) {
         x <- .self$streamnodeList[[i]]$depthdf$Area
 
-        if (all(x) == 0) {
-          warning(sprintf("Cross-sectional flow area for streamnode %i (index %i) is all zero",
+        if (all(x == 0)) {
+          issuecount <- issuecount+1
+          message(sprintf("Cross-sectional flow area for streamnode %i (index %i) is all zero",
                            sdf$nodeID[i], i))
         }
 
         if (!all(x == cummax(x))) {
           issuecount <- issuecount+1
-          warning(sprintf("Equivalent cross-sectional flow Area for streamnode %i (index %i) is not monotonically increasing, check for errors",
+          message(sprintf("Equivalent cross-sectional flow Area for streamnode %i (index %i) is not monotonically increasing, check for errors",
                           sdf$nodeID[i], i))
         }
         # other checks to make in preprocessing? xxx
@@ -3013,7 +3038,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
       return(streamnodedf)
     },
 
-    write_preprocessed_depthdf = function(bbopt=NULL, modelname=NULL) {
+    write_preprocessed_depthdf = function(bbopt=NULL, modelname=NULL, outputfile=NULL) {
 
       workingfolder <- bbopt$workingfolder
 
@@ -3022,7 +3047,9 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         modelname <- temp[length(temp)]
       }
 
-      outputfile <- file.path(workingfolder,"model",sprintf("%s.bbg",modelname))
+      if (is.null(outputfile)) {
+        outputfile <- file.path(workingfolder,"model",sprintf("%s.bbg",modelname))
+      }
       # xxx replace this path with one that comes from the bb_get_object function
       if (!dir.exists(file.path(workingfolder,"model"))) {
         dir.create(file.path(workingfolder,"model"))
@@ -3375,6 +3402,7 @@ bb_boundaryconditionlist <- setRefClass("bb_boundaryconditionlist", field = list
 #' \code{c(discretized_conv, roughzone_conveyance, areaweighted_conveyance)}
 #'
 #' @field workingfolder the workingfolder where files are stored
+#' @field modelname name of model files, used in writing files (e.g., modelname.bbi)
 #' @field modeltype type of model being solved (steadyflow, unsteadyflow)
 #' @field regimetype type of regime (subcritical, supercritical, mixed)
 #' @field g gravitational constant (N/kg)
@@ -3452,6 +3480,7 @@ bb_boundaryconditionlist <- setRefClass("bb_boundaryconditionlist", field = list
 #'
 bb_options <- setRefClass("bb_options",
 field=list(workingfolder="character",
+modelname="character",
 modeltype="character",regimetype="character",
 g="numeric",
 Froude_threshold="numeric",
@@ -3481,12 +3510,13 @@ blended_conveyance_weights="numeric",blended_nc_weights="numeric",
 output_velocity="logical",output_depthvelocityproduct="logical"),
 method = list(initialize =
     function(..., workingfolder="",
+             modelname="modelname",
              modeltype="steadyflow",regimetype="subcritical",
              g=9.81,
              Froude_threshold=0.94,
              sample_linepoints_dist=-1,removesinks_dist=-1,pourpoint_snap_dist=-1,
              dx=0.1,Hseq=c(0,5,10),
-             use_preproc=FALSE,use_euclidean=FALSE,interp_extraplotion_method="stoponerror",
+             use_preproc=TRUE,use_euclidean=FALSE,interp_extraplotion_method="stoponerror",
              num_extrapolation_points=20,
              xs_use_obcalcs=FALSE,
              friction_slope_method="us_friction",
@@ -3508,6 +3538,7 @@ method = list(initialize =
              output_velocity=FALSE,output_depthvelocityproduct=FALSE)
     {
       callSuper(..., workingfolder=workingfolder,
+                modelname=modelname,
                 modeltype=modeltype, regimetype=regimetype,
                 g=g,
                 Froude_threshold=Froude_threshold,

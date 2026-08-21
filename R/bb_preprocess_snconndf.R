@@ -5,12 +5,24 @@
 #'
 #' @param bbmodel blackbird model object
 #' @param subsetnodeIDs list of integer nodeIDs to compute transfer for
+#' @param handthresh numeric threshold for filtering values in the table (default -1)
+#' @param remove_USDS_nodes boolean whether to remove any nodes that are upstream or downstream of each other (i.e. \code{transfer %in% c(1,-1)})
 #' @param writefile boolean whether to write the file directly to
 #' @return {snconndf which can be passed to \code{\link{bb_write_model_files_cpp}}}
 #'
 #' @details
 #' If using \code{writefile}, it will immediately write out the snconndf to a bbg format file
 #' without requiring the full model build to write with \code{\link{bb_write_model_files_cpp}}
+#'
+#' With \code{handthresh}, if the value is not -1, then table entries greater than the threshold will be removed.
+#' Table entries will only be removed if both HAND values are greater than the threshold provided. This functionality
+#' is present to remove rows that are highly unlikely to interact, i.e. values with HAND values greater than the
+#' anticipated depths at the connection points between streamnodes.
+#'
+#' The \code{remove_USDS_nodes} boolean is set to remove any nodes that are upstream or downstream of each other, as these are
+#' not allowed to transfer flow in the compiled Blackbird code unless they are configured as conditonal nodes. If the
+#' modeller does not plan to configure them as conditional nodes, no flow will be transferred between these
+#' nodes and this flag should be enabled to avoid extra computations that will be netted out anyways.
 #'
 #' This function requires that catchments for streamnodes be delineated, as well as all precursor steps,
 #' such as DEM and HAND processing.
@@ -23,7 +35,9 @@
 #' @importFrom sf st_touches st_intersection st_as_sf st_buffer
 #' @importFrom igraph graph_from_data_frame subcomponent
 #' @export bb_preprocess_snconndf
-bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, writefile=FALSE) {
+bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, handthresh=-1, remove_USDS_nodes=FALSE,
+                                   csndf=NULL,
+                                   writefile=FALSE) {
 
   if (is.null(bbmodel)) {
     stop("bbmodel is required")
@@ -45,13 +59,23 @@ bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, writefile=F
   catchmentraster <- bb_get_catchmentsfromstreamnodesraster(bbopt$workingfolder)
   rivershp <- bb_get_rivershp(bbopt$workingfolder)
 
+  ## check conditional processing too
+   runcond <- FALSE
+  if (!is.null(csndf)) {
+    runcond <- TRUE
+  }
+
+  if (runcond) {
+    condhand <- terra::rast(csndf$handpath)
+  }
+
   allcrds <- terra::crds(hand, df=TRUE, na.rm=FALSE)
 
   demres <- bb_get_demres(bbopt)
 
-  mciddf <- structure(list(cellid = numeric(0), hh = numeric(0), ee = numeric(0),
+  mciddf <- structure(list(cellid = integer(0), hh = numeric(0), ee = numeric(0),
     craster = integer(0), cellid2 = logical(0), hh2 = logical(0),
-    ee2 = logical(0), craster2 = logical(0), transfer=numeric(0)), row.names = integer(0), class = "data.frame")
+    ee2 = logical(0), craster2 = logical(0), transfer=integer(0)), row.names = integer(0), class = "data.frame")
 
   dd <- data.frame(matrix(NA,nrow=0,ncol=5))
   colnames(dd) <- c("cid","adjcid","mindhand1","elev1","reachID")
@@ -59,6 +83,8 @@ bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, writefile=F
 
   # get sdf and calculate igraph network
   sdf <- bbmodel$bbgeo$get_streamnodeList_as_dataframe()
+  sdf$nodeID <- as.integer(sdf$nodeID)
+  sdf$downnodeID <- as.integer(sdf$downnodeID)
   g <- graph_from_data_frame(sdf[,c("nodeID","downnodeID")], directed = TRUE)
   # is_upstream(a = 200, b = 219, g)
   # is_upstream <- function(a, b) {
@@ -135,10 +161,17 @@ bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, writefile=F
           hh <- terra::extract(hand, ss, cells=TRUE,na.rm=TRUE) # [,2]
           ee <- terra::extract(dem,ss, cells=TRUE,na.rm=TRUE) # [,2]
           craster <- terra::extract(catchmentraster, ss, cells=TRUE,na.rm=TRUE)
-          df <- data.frame("cellid"=hh[,3], "hh"=hh[,2], "ee"=ee[,2], "craster"=craster[,2])
+          df <- data.frame("cellid"=hh[,3], "hh"=hh[,2], "ee"=ee[,2], "craster"=craster[,2], "hhc"=NA)
+          if (runcond & (cid==csndf$mapsto | adjid==csndf$mapsto)) {
+            hhc <- terra::extract(condhand, ss, cells=TRUE,na.rm=TRUE)
+            df$hhc <- hhc[,2]
+          }
           # filter NA
           df <- df[which(!is.na(df$hh)),]
           df <- df[which(!is.na(df$ee)),]
+          # if (!is.null(df$hhc)) {
+          #   df <- df[which(!is.na(df$hhc)),]
+          # }
 
           # take the df rows for the current id and find all the ones for adjid
           ciddf <- df[df$craster == cid,]
@@ -186,6 +219,7 @@ bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, writefile=F
                 ciddf$hh2[k] <- adjiddfk$hh
                 ciddf$ee2[k] <- adjiddfk$ee
                 ciddf$craster2[k] <- adjiddfk$craster
+                ciddf$hhc[k] <- adjiddfk$hhc
               }
             }
 
@@ -221,46 +255,46 @@ bb_preprocess_snconndf <- function(bbmodel=NULL, subsetnodeIDs=NULL, writefile=F
   mciddf <- mciddf[!is.na(mciddf$ee),]
   mciddf <- mciddf[!is.na(mciddf$hh2),]
   mciddf <- mciddf[!is.na(mciddf$ee2),]
+  # mciddf <- mciddf[!is.na(mciddf$hhc),]
 
   ## sort for writing
   snconndf <- mciddf[order(mciddf$reachID, mciddf$craster, mciddf$craster2, mciddf$ee),]
+
+  ## filter for HAND values over threshold
+  if (handthresh>0) {
+    snconndf <- snconndf[-which(snconndf$hh>handthresh & snconndf$hh2>handthresh),]
+  }
+
+  ## filter for nodes that have an upstream/downstream relationship (i.e., transfer is 1 or -1)
+  if (remove_USDS_nodes) {
+    snconndf <- snconndf[-which(snconndf$transfer %in% c(1,-1)),]
+  }
+
+  if (runcond) {
+    snconndf$condsnID <- NA
+    snconndf$mapsto <- NA
+    ind <- which((snconndf$craster==csndf$mapsto | snconndf$craster2==csndf$mapsto) & (snconndf$craster %in% csndf$fromids | snconndf$craster2 %in% csndf$fromids))
+    snconndf[ind,]$condsnID <- rep(csndf$nodeID,length(ind))
+    snconndf[ind,]$mapsto <- csndf$mapsto
+  }
+
+  ## temporarily update to basic format and just
+  if (runcond) {
+    # xxx later update script to just update the values
+    snconndf[snconndf$craster2 == csndf$mapsto,]$craster2 <- csndf$nodeID
+    snconndf[snconndf$craster2 == csndf$nodeID,]$hh2 <- snconndf[snconndf$craster2 == csndf$nodeID,]$hhc
+  }
 
   if (writefile) {
     workingfolder <- bbmodel$bbopt$workingfolder
     modelname <- "snconnndf_file"
     ## write out full geometry info ----
-    outputfile <- file.path(workingfolder,"model",sprintf("%s.bbg",modelname))
+    outputfile <- file.path(workingfolder,"model",sprintf("%s_streamnodeconnections.bbg",modelname))
     # xxx replace this path with one that comes from the bb_get_object function
     if (!dir.exists(file.path(workingfolder,"model"))) {
       dir.create(file.path(workingfolder,"model"))
     }
-    fc <- file(outputfile,open='w+')
-
-
-    writeLines("## Blackbird Geometry File (.bbg)",fc)
-    writeLines("# \n",fc)
-
-    # check if snconndf provided
-    if (!is.null(snconndf)) {
-      writeLines(sprintf("\n # :RedirectToFile %s_streamnodeconnections.bbg # add this to main bbg file",modelname), fc)
-    }
-
-    writeLines(":StreamnodeConnectionsTable",fc)
-    writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","HAND1","HAND2","elev1","elev2","reachID","transfer")),collapse="  "),fc)
-      for (j in 1:nrow(snconndf)) {
-        writeLines(sprintf("    %i %i %.4f %.4f %.4f %.4f %i %i",
-                           snconndf$craster[j],
-                           snconndf$craster2[j],
-                           snconndf$hh[j],
-                           snconndf$hh2[j],
-                           snconndf$ee[j],
-                           snconndf$ee2[j],
-                           snconndf$reachID[j],
-                           snconndf$transfer[j]
-                           ),fc)
-      }
-    writeLines(":EndStreamnodeConnectionsTable",fc)
-    close(fc)
+    bb_write_snconndf(snconndf,outputfile)
   }
 
   return(snconndf)

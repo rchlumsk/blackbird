@@ -38,6 +38,7 @@ bb_preprocess_generate_rivershp <- function(bbopt=NULL,
                                    outlet=NULL, outlet_snap_dist=20,  flowacc_threshold=1e5,
                                    min_segment_length=100, river_snap_dist=3,
                                    simplify_reaches=TRUE,
+                                   dontwrite=FALSE,
                                    return_shp=FALSE) {
 
   # outlet_snap_dist=20
@@ -98,7 +99,6 @@ bb_preprocess_generate_rivershp <- function(bbopt=NULL,
   }
 
   ## generate channels
-
   bb_wbt_channels(flow_acc_file,flow_dir_file,tfrchannels,tfchannels,threshold=flowacc_threshold)
   rivershp <- read_sf(tfchannels)
 
@@ -195,10 +195,12 @@ bb_preprocess_generate_rivershp <- function(bbopt=NULL,
   # rivershp_file <- bb_get_genrivershp(workingfolder,returnobject=FALSE)
   rivershp_file <- bb_get_rivershp(workingfolder,returnobject=FALSE)
   rivershp <- rivershp[,c("reachID","downID","geometry")]
-  if (file.exists(rivershp_file)) {
-    unlink(rivershp_file)
+  if (!dontwrite) {
+    if (file.exists(rivershp_file)) {
+      unlink(rivershp_file)
+    }
+    write_sf(rivershp, dsn=rivershp_file)
   }
-  write_sf(rivershp, dsn=rivershp_file)
 
   if (return_shp) {
     return(rivershp)

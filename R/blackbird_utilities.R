@@ -1495,7 +1495,7 @@ bb_sample_linepoints_multiple <- function(lineshp=NULL, pointdist=100, firstpoin
   if (!is.null(add_info_cols)) {
     if (any(add_info_cols %notin% colnames(lineshp))) {
       warning("The following columns not found in lineshp:\n",
-              paste0(add_info_cols[which(add_info_cols %notin% colnames(lineshp))]),sep="\n")
+              paste0(add_info_cols[which(add_info_cols %notin% colnames(lineshp))]),sep=",\n")
       add_info_cols <- add_info_cols[which(add_info_cols %in% colnames(lineshp))]
       if (length(add_info_cols) == 0) {
         add_info_cols <- NULL
@@ -2287,7 +2287,7 @@ bb_drop_inconsistent_geomtypes = function(x, keeptype="LINESTRING") {
 #' @importFrom tidygraph as_tibble
 #' @importFrom dplyr mutate filter arrange select rename left_join pull row_number
 #' @importFrom purrr map_int map2_dbl
-#' @importFrom igraph as.igraph bfs
+#' @importFrom igraph as.igraph bfs activate
 bb_network_calcdownid = function(pp, rivershp=NULL) {
 
   snapped_streamnodes <- pp
@@ -2301,11 +2301,11 @@ bb_network_calcdownid = function(pp, rivershp=NULL) {
 
   # 1. Build directed sfnetwork
   net <- as_sfnetwork(rivershp, directed = TRUE) %>%
-    activate("edges") %>%
+    sfnetworks::activate("edges") %>%
     mutate(edge_id = row_number())
 
   edges_tbl <- net %>%
-    activate("edges") %>%
+    sfnetworks::activate("edges") %>%
     as_tibble() %>%
     mutate(from_node = from,
            to_node   = to)
@@ -2611,7 +2611,7 @@ bb_generate_flow_table <- function(geometry=NULL) {
 #' @export bb_get_fileinfo
 bb_get_fileinfo <- function(objectname=NULL) {
 
-  sdf <- data.frame(matrix(ncol=3,nrow=51,byrow=TRUE,
+  sdf <- data.frame(matrix(ncol=3,nrow=52,byrow=TRUE,
                            data=c(
                              c("rivershp",                    "bb_rivershp.shp","sf"),
                              # c("genrivershp",                 "bb_generated_rivershp.shp","sf"),
@@ -2631,6 +2631,7 @@ bb_get_fileinfo <- function(objectname=NULL) {
                              c("channelwsshp",                "bb_channel_ws.shp","sf"),
 
                              c("handmaskedraster",            "bb_handmasked.tif","SpatRaster"),
+                             c("handconditionalraster",       "bb_hand_conditional.tif","SpatRaster"),
 
                              c("euclideandistraster",         "bb_euclideandist.tif","SpatRaster" ),
                              c("euclideandistcondraster",     "bb_euclideandist_conditioned.tif","SpatRaster" ),
@@ -2862,6 +2863,13 @@ bb_get_channelwsshp <- function(workingfolder=NULL, returnobject=TRUE, include_w
 #' @rdname bb_get
 bb_get_handmaskedraster <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
   objectname <- "handmaskedraster"
+  result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
+  return(result)
+}
+
+#' @rdname bb_get
+bb_get_handconditionalraster <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
+  objectname <- "handconditionalraster"
   result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
   return(result)
 }
@@ -3318,6 +3326,115 @@ bb_write_catchmentstreamnodes_geojson <- function(bbopt=NULL,outputfolder=NULL, 
   return(TRUE)
 }
 
+#' @title Write snconndf to bbg file
+#'
+#' @description
+#' Writes the streamnode connection data (snconndf) to file
+#'
+#' @param snconndf output of the \code{bb_preprocess_snconndf} function
+#' @param outputfile file to write to including any paths
+#'
+#' @return Returns \code{TRUE} if written successfully
+#'
+#' @name bb_write_snconndf
+bb_write_snconndf <- function(snconndf=NULL, outputfile=NULL) {
+
+  if (is.null(snconndf) | is.null(outputfile)) {
+    stop("snconndf and outputfile both required")
+  }
+
+  fc <- file(outputfile,open='w+')
+
+  writeLines("## Blackbird Geometry File (.bbg)",fc)
+  writeLines("# \n",fc)
+
+  # check if snconndf provided
+  if (!is.null(snconndf)) {
+    writeLines(sprintf("\n # :RedirectToFile %s_streamnodeconnections.bbg # add this to main bbg file",modelname), fc)
+  }
+
+  writeLines("# In the :StreamnodeConnectionsTable, the transfer column indicates the connection of the nodes within the network",fc)
+  writeLines("# transfer ==  1 -> nodeID is upstream of adjacent_nodeID",fc)
+  writeLines("# transfer == -1 -> nodeID is downstream of adjacent_nodeID",fc)
+  writeLines("# transfer ==  0 -> nodeID is not upstream or downstream of adjacent_nodeID (likely on a parallel branch)",fc)
+  writeLines("# In the Blackbird compiled code, only transfers between parallel nodes (i.e., transfer==0) is allowed unless a conditioanl streamnode is configured",fc)
+  writeLines("# ",fc)
+  writeLines(":StreamnodeConnectionsTable",fc)
+  writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","HAND1","HAND2","elev1","elev2","reachID","transfer")),collapse="  "),fc)
+  # writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","HAND1","HAND2","elev1","elev2","reachID","transfer","condsnID","mapsto","hhc")),collapse="  "),fc)
+    for (j in 1:nrow(snconndf)) {
+      writeLines(sprintf("    %i %i %.4f %.4f %.4f %.4f %i %i",
+      # writeLines(sprintf("    %i %i %.4f %.4f %.4f %.4f %i %i %i %i %.4f",
+                         snconndf$craster[j],
+                         snconndf$craster2[j],
+                         snconndf$hh[j],
+                         snconndf$hh2[j],
+                         snconndf$ee[j],
+                         snconndf$ee2[j],
+                         snconndf$reachID[j],
+                         snconndf$transfer[j]
+                         # snconndf$condsnID[j],
+                         # snconndf$mapsto[j],
+                         # snconndf$hhc[j]
+                         ),fc)
+    }
+  writeLines(":EndStreamnodeConnectionsTable",fc)
+  close(fc)
+
+  return(TRUE)
+}
+
+
+#' @title Write conditional streamnode information to file
+#'
+#' @description
+#' Writes the conditional streamnode data (condsndf) to file
+#'
+#' @param condsndf output of the \code{bb_preprocess_conditional_streamnode} function
+#' @param outputfile file to write to including any paths
+#'
+#' @return Returns \code{TRUE} if written successfully
+#'
+#' @name bb_write_condsndf
+bb_write_condsndf <- function(condsndf, outputfile) {
+
+
+  stop("function not yet available")
+
+
+  fc <- file(outputfile,open='w+')
+
+
+    writeLines("## Blackbird Geometry File (.bbg)",fc)
+    writeLines("# \n",fc)
+
+
+
+    # check if snconndf provided
+    # if (!is.null(snconndf)) {
+    #   writeLines(sprintf("\n # :RedirectToFile %s_streamnodeconnections.bbg # add this to main bbg file",modelname), fc)
+    # }
+
+    # writeLines(":StreamnodeConnectionsTable",fc)
+    # writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","HAND1","HAND2","elev1","elev2","reachID","transfer")),collapse="  "),fc)
+    #   for (j in 1:nrow(snconndf)) {
+    #     writeLines(sprintf("    %i %i %.4f %.4f %.4f %.4f %i %i",
+    #                        snconndf$craster[j],
+    #                        snconndf$craster2[j],
+    #                        snconndf$hh[j],
+    #                        snconndf$hh2[j],
+    #                        snconndf$ee[j],
+    #                        snconndf$ee2[j],
+    #                        snconndf$reachID[j],
+    #                        snconndf$transfer[j]
+    #                        ),fc)
+    #   }
+    writeLines(":EndStreamnodeConnectionsTable",fc)
+    close(fc)
+
+    return(TRUE)
+}
+
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ### HYDRAULIC CALCULATION UTILITIES ----
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3343,9 +3460,12 @@ bb_write_catchmentstreamnodes_geojson <- function(bbopt=NULL,outputfolder=NULL, 
 #' @export bb_compute_preproc_hydprops
 bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
                                     catchment, dem, hand, handid, dhands, dhandsid, manningsn, reachlength,
+                                    sloper,
+                                    # Ap, dv,
                                     catchmentstack=NULL, applyfuzzy=FALSE, skipheadwater=FALSE) {
 
 
+  # a = demres (grid raster resolution in metres)
 
   ## skip all this, just using a single depth for each reach
 
@@ -3378,6 +3498,9 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
   } else {
     ind2 <- which(catchmentstack[i,] == sdf$nodeID[i])
   }
+
+  # App <- Ap[ind2]
+  # dvv <- dv[ind2]
 
   if (skipheadwater & sdf$upnodeID1[i] == -1) {
     preproc_table$Area               <- 0.0
@@ -3432,6 +3555,7 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
       handidrr <- as.integer(handid[ind2])
     }
 
+
     ## if getting values for each spp, could look like this
     # pointid from catchment was somehow not lining up here
     # from other definition of ind2
@@ -3450,11 +3574,38 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     dirr <- bbopt$Hseq[j]-handrr # use single depth here
     dirr[dirr<0] <- 0
 
-    # Aif_rr = dirr*0
-    Aif_rr <- dirr*0+(a^2)
-    # Aif_rr[dirr<=0] <- 0
-    Atf_rr <- Aif_rr
-    Vif_rr <- Aif_rr*dirr
+    # area_method <- c("planar","slope")[1]
+
+    Ait_rr = dirr*0 # tile area (a^2) ignoring slopes/planes
+    Ait_rr <- dirr*0+(a^2)
+    Ait_rr[dirr<=0] <- 0
+
+    # calculate submerged areas from planar surface
+    # if (area_method=="planar") {
+    #   f <- pmin(1, dirr / dvv)
+    #   Aif_rr <- f * App # flood area in each cell
+    #   Aif_rr[dirr<=0] <- 0 # force zero with depth==0, should be unnecessary
+
+      # calculate volume
+      # h <- pmin(dirr, dvv)
+      # Vif_rr <- Ait_rr*h
+      # Vif_rr <- Ait_rr * dirr
+    # } else {
+      # slope method
+      L <- sqrt(2*a^2) # Horizontal distance along steepest slope direction
+      dvv <- L * tan(sloper[ind2]) # Vertical relief across the cell
+      f <- pmin(1, dirr / dvv)  # Fraction submerged
+      App <- Ait_rr/cos(sloper[ind2]) # surface area with slope
+      Aif_rr <- f * App   # surface with slope accoutning for submergence
+      Ait_rr <- Ait_rr*f # also correct top width for subermerged fraction
+      # h <- pmin(1, dirr/dvv)
+      Vif_rr <- Ait_rr * dirr  # flood volume including slope
+    # }
+
+    # calculate totals
+    Af <- sum(Aif_rr,na.rm = TRUE) # overall flood area with sloped surface
+    Atf <- sum(Ait_rr,na.rm=TRUE) # for use in top width
+    Vf <- sum(Vif_rr,na.rm = TRUE) # total volume on planar surface
 
     Rhi_rr <- Vif_rr / Aif_rr
     Ki_rr <- (1/manningsn[ind2])*Vif_rr*(Rhi_rr^(2.0/3.0))
@@ -3462,9 +3613,6 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     Vfi_ni_rr <-  Vif_rr/manningsn[ind2]
     Ki3_Vif2_ratio <-  (Ki_rr^3) / ((Vif_rr/a)^2)
 
-    Af <- sum(Aif_rr,na.rm = TRUE)
-    Atf <- Af
-    Vf <- sum(Vif_rr,na.rm = TRUE)
     Kisum <- sum(Ki_rr,na.rm = TRUE)
 
     if (bbopt$catchment_integration_method == "effective_length") {
@@ -3837,6 +3985,69 @@ bb_hydraulic_output_emptydf_propsonly <- function(nrow=1) {
                     "alpha_areaconv","alpha_roughconv","alpha_disconv",
                     "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv")
   return(mm)
+}
+
+
+#' @title Calculate planar areas from DEM
+#'
+#' @description
+#' Calculate planar area and vertical relief for each grid cell.
+#'
+#' @details
+#' Used in subsequent calculations with depth to detemrine submerged areas for
+#' determination of wetted perimeter.
+#'
+#' @return {Returns \code{list=c(Ap,dv)}, where Ap is the vector of planar areas and dv is the vector of relief}
+#'
+#' @examples
+#'
+#' @importFrom terra values
+#' @export bb_calc_area_planar
+bb_calc_area_planar <- function(dem) {
+
+  dx <- res(dem)[1]
+  dy <- res(dem)[2]
+
+  nr <- nrow(dem)
+  nc <- ncol(dem)
+
+  # Correct elevation matrix (terra is column-major)
+  z <- matrix(values(dem), nrow = nr, ncol = nc, byrow = FALSE)
+
+  #### dz/dx (p) ####
+  p <- matrix(0, nr, nc)
+  p[, 2:(nc-1)] <- (z[, 3:nc] - z[, 1:(nc-2)]) / (2 * dx)
+  p[, 1]  <- (z[, 2] - z[, 1]) / dx
+  p[, nc] <- (z[, nc] - z[, nc-1]) / dx
+
+  #### dz/dy (q) ####
+  q <- matrix(0, nr, nc)
+  q[2:(nr-1), ] <- (z[3:nr, ] - z[1:(nr-2), ]) / (2 * dy)
+  q[1, ]  <- (z[2, ] - z[1, ]) / dy
+  q[nr, ] <- (z[nr, ] - z[nr-1, ]) / dy
+
+  #### 3‑D surface area ####
+  Aplan <- dx * dy
+  A3D <- Aplan * sqrt(1 + p^2 + q^2)
+
+  #### vertical relief across the cell ####
+  dz <- abs(p * dx + q * dy)
+  dz_vec <- as.vector(dz)   # <-- FIX
+
+  # #### depth raster ####
+  # depth <- values(depth_r)
+  #
+  # #### submerged fraction ####
+  # f <- pmin(1, depth / dz_vec)
+  #
+  # #### submerged area ####
+  # Asub <- f * as.vector(A3D)
+  #
+  # #### output raster ####
+  # out <- dem
+  # values(out) <- Asub
+
+  return(list(as.vector(A3D), dz_vec))
 }
 
 

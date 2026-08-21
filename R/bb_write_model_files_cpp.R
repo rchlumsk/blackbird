@@ -115,24 +115,7 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   # write snconndf if not null
   if (!is.null(snconndf)) {
       outputfile <- file.path(workingfolder,"model",sprintf("%s_streamnodeconnections.bbg",modelname))
-      fc <- file(outputfile,open='w+')
-
-      writeLines(":StreamnodeConnectionsTable",fc)
-      writeLines(paste(c("  :Attributes",c("nodeID","adjacent_nodeID","HAND1","HAND2","elev1","elev2","reachID")),collapse="  "),fc)
-        for (j in 1:nrow(snconndf)) {
-          writeLines(sprintf("    %i %i %.4f %.4f %.4f %.4f %i",
-                             snconndf$craster[j],
-                             snconndf$craster2[j],
-                             snconndf$hh[j],
-                             snconndf$hh2[j],
-                             snconndf$ee[j],
-                             snconndf$ee2[j],
-                             snconndf$reachID[j]
-                             ),fc)
-          # xxx maybe adding transfer here too
-        }
-      writeLines(":EndStreamnodeConnectionsTable",fc)
-      close(fc)
+      bb_write_snconndf(snconndf, outputfile)
   }
 
   ## write boundary conditions and flows ----
