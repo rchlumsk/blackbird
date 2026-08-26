@@ -2611,12 +2611,9 @@ bb_generate_flow_table <- function(geometry=NULL) {
 #' @export bb_get_fileinfo
 bb_get_fileinfo <- function(objectname=NULL) {
 
-  sdf <- data.frame(matrix(ncol=3,nrow=52,byrow=TRUE,
+  sdf <- data.frame(matrix(ncol=3,nrow=53,byrow=TRUE,
                            data=c(
                              c("rivershp",                    "bb_rivershp.shp","sf"),
-                             # c("genrivershp",                 "bb_generated_rivershp.shp","sf"),
-
-                             # c("rivercatch",                  "bb_rivercatch.shp","sf"),
                              c("demraster",                   "bb_dem.tif","SpatRaster"),
                              c("demcondraster",               "bb_dem_conditioned.tif","SpatRaster"),
                              c("dembreachraster",             "bb_dem_breached.tif","SpatRaster"),
@@ -2626,29 +2623,24 @@ bb_get_fileinfo <- function(objectname=NULL) {
                              c("flowdirdinfraster",           "bb_flow_dinf_direction.tif","SpatRaster"),
                              c("sloperaster",                 "bb_slope.tif","SpatRaster"),
                              c("reachlengthraster",           "bb_reach_length.tif","SpatRaster"),
-
                              c("channelwsraster",             "bb_channel_ws.tif","SpatRaster"),
                              c("channelwsshp",                "bb_channel_ws.shp","sf"),
-
                              c("handmaskedraster",            "bb_handmasked.tif","SpatRaster"),
                              c("handconditionalraster",       "bb_hand_conditional.tif","SpatRaster"),
-
+                             c("interpraster",                "bb_interp.tif","SpatRaster"),
                              c("euclideandistraster",         "bb_euclideandist.tif","SpatRaster" ),
                              c("euclideandistcondraster",     "bb_euclideandist_conditioned.tif","SpatRaster" ),
                              c("euclideandistflowaccraster",  "bb_euclideandist_flow_accumulation.tif","SpatRaster" ),
                              c("euclideandistflowdirraster",  "bb_euclideandist_flow_direction.tif","SpatRaster" ),
-
                              c("pourpointshandshp",           "bb_pourpoints_hand.shp","sf"),
                              c("snappedpourpointshandshp",    "bb_snapped_pourpoints_hand.shp","sf"),
                              c("handpourpointIDraster",       "bb_hand_pourpoint_id.tiff","SpatRaster"),
-
                              c("demcoarseraster",             "bb_dem_coarse.tif","SpatRaster"),
                              c("demcoarsecondraster",         "bb_demcoarse_conditioned.tif","SpatRaster"),
                              c("coarseflowaccraster",         "bb_coarse_flow_accumulation.tif","SpatRaster"),
                              c("coarseflowdirraster",         "bb_coarse_flow_direction.tif","SpatRaster"),
                              c("pourpointshydrivershp",           "bb_pourpoints_hydriver.shp","sf"),
                              c("snappedpourpointshydrivershp",    "bb_snapped_pourpoints_hydriver.shp","sf"),
-
                              c("catchmentshandshp",           "bb_catchmentshand.shp","sf"),
                              c("catchmentshandraster",        "bb_catchmentshand.tif","SpatRaster"),
                              c("zdrainageraster",             "bb_zdrainage.tif","SpatRaster"),
@@ -2660,20 +2652,16 @@ bb_get_fileinfo <- function(objectname=NULL) {
                              c("manningsnraster",             "bb_manningsn.tif","SpatRaster"),
                              c("hydrivershp",                 "bb_hydcorrected_rivershp.shp","sf"),
                              c("slrivershp",                  "bb_slrivershp.shp","sf"),
-
                              c("catchmentlistrdata",          "bb_catchmentlist.rds","rds"),
                              c("xsectionlistrdata",           "bb_xsectionlist.rds","rds"),
                              c("geometryrdata",               "bb_geometry.rds","rds"),
                              c("boundaryconditionrdata",      "bb_bc.rds","rds"),
                              c("bboptionsrdata",              "bb_options.rds","rds"),
-
                              c("hydraulicoutput",             "bb_hydraulic_output.csv","csv"),
-
                              c("allids",                      "bb_allids_dinf.csv","csv"),
                              c("validcells",                  "bb_validcells_dinf.csv","csv"),
                              c("handfuzzyraster",             "bb_hand_fuzzy.tif","SpatRaster"),
                              c("catchmentsrasterstack",       "bb_catchments_fromstreamnodes_rasterstack.tif","SpatRaster"),
-
                              c("depthraster",                 "bb_results_depth.tif","SpatRaster"),
                              c("velocityraster",              "bb_results_velocity.tif","SpatRaster"),
                              c("depthxvelocityraster",        "bb_results_depthxvelocity.tif","SpatRaster"),
@@ -2870,6 +2858,13 @@ bb_get_handmaskedraster <- function(workingfolder=NULL, returnobject=TRUE, inclu
 #' @rdname bb_get
 bb_get_handconditionalraster <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
   objectname <- "handconditionalraster"
+  result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
+  return(result)
+}
+
+#' @rdname bb_get
+bb_get_interpraster <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
+  objectname <- "interpraster"
   result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
   return(result)
 }

@@ -254,7 +254,7 @@ bb_write_model_files_cpp <- function(modelname="modelname",
     dir.create(file.path(workingfolder,"model","GIS_files"))
   }
 
-  # snapped_pourpoints_hand
+  # snapped_pourpoints_hand # xxx may be able to remove
   spp <- bb_get_snappedpourpointshand(bbopt$workingfolder)
   colnames(spp) <- c("hpointid",colnames(spp)[-1]) # rename pointid to hpointid
   spp %>%
@@ -268,9 +268,12 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   # bb_hand
   file.copy(bb_get_handraster(bbopt$workingfolder, returnobject = FALSE),
             file.path(workingfolder,"model",bb_get_handraster(workingfolder="GIS_files", returnobject=FALSE)))
-  # bb_hand_pourpoint_id
+  # bb_hand_pourpoint_id  # xxx may be able to remove
   file.copy(bb_get_handpourpointIDraster(bbopt$workingfolder, returnobject = FALSE),
             file.path(workingfolder,"model",bb_get_handpourpointIDraster(workingfolder="GIS_files", returnobject=FALSE)))
+  # bb_interp
+  file.copy(bb_get_interpraster(bbopt$workingfolder, returnobject = FALSE),
+            file.path(workingfolder,"model",bb_get_interpraster(workingfolder="GIS_files", returnobject=FALSE)))
 
   if (bbopt$use_dhand) {
     # bb_dhand layers
