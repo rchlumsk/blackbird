@@ -317,7 +317,7 @@ streamnode <- setRefClass("streamnode",
                                     "Manning_Composite","Length_Effective","HydDepth","TopWidth",
                                     "K_Total_areaconv","K_Total_disconv","K_Total_roughconv",
                                     "alpha_areaconv","alpha_disconv","alpha_roughconv",
-                                    "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv")
+                                    "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv","nc_invmanning")
 
                   if (WSL < min(.self$depthdf$WSL) | WSL > max(.self$depthdf$WSL)) {
 
@@ -2089,7 +2089,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
         # calculate average min elev for each catchment
         for (i in tt) {
           ind1 <- which(catchment == subsetNodeIDs[i])
-          return_slopes[i] <- mean(sloper[which(hand==min(hand[ind1],na.rm=TRUE))])
+          return_slopes[i] <- mean(sloper[which(hand==min(hand[ind1],na.rm=TRUE))],na.rm=TRUE)
           warning(sprintf("Slope for streamnode %i was initially not finite, and was recalculated",subsetNodeIDs[i]))
         }
       }
@@ -2116,9 +2116,9 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
                                                 runparallel=FALSE, applyfuzzy=FALSE, usefuzzyhand=FALSE,
                                                 skipheadwater=FALSE) {
 
-      # subsetNodeIDs = NULL
       # subsetNodeIDs = seq(188,195)
 
+      # subsetNodeIDs = NULL
       # skip_extent_checks=FALSE
       # runparallel=FALSE
       # applyfuzzy=FALSE
@@ -2708,6 +2708,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
             .self$streamnodeList[[i]]$depthdf$nc_wavgwp <- 0
             .self$streamnodeList[[i]]$depthdf$nc_wavgarea <- 0
             .self$streamnodeList[[i]]$depthdf$nc_wavgconv <- 0
+            .self$streamnodeList[[i]]$depthdf$nc_invmanning <- 0
 
             preproc_table <- .self$streamnodeList[[i]]$depthdf
 
@@ -2719,7 +2720,9 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
                                                          catchrs, applyfuzzy=applyfuzzy,skipheadwater=skipheadwater)
 
             # temp
-            preproc_table$Area
+            # preproc_table$WetPerimeter
+            # preproc_table$TopWidth
+
 
             # .self$streamnodeList[[indsdf[i]]]$depthdf <- preproc_table
             .self$streamnodeList[[i]]$depthdf <- preproc_table
@@ -2794,9 +2797,11 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
             .self$streamnodeList[[i]]$depthdf$Manning_Composite <- .self$streamnodeList[[i]]$depthdf$nc_wavgconv
           } else if (bbopt$Manning_composite_method == "equal_velocity") {
             .self$streamnodeList[[i]]$depthdf$Manning_Composite <- .self$streamnodeList[[i]]$depthdf$nc_equalvelocity
+          } else if (bbopt$Manning_composite_method == "inverse_manning") {
+            .self$streamnodeList[[i]]$depthdf$Manning_Composite <- .self$streamnodeList[[i]]$depthdf$nc_invmanning
           } else if (bbopt$Manning_composite_method == "blended_nc") {
-            if (length(bbopt$blended_nc_weights) != 5) {
-              stop("length of bbopt$blended_nc_weights must be 5.")
+            if (length(bbopt$blended_nc_weights) != 6) {
+              stop("length of bbopt$blended_nc_weights must be 6.")
             }
             if (sum(bbopt$blended_nc_weights)!=1.0) {
               stop("sum of bbopt$blended_nc_weights must be 1.0")
@@ -2807,7 +2812,8 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
               .self$streamnodeList[[i]]$depthdf$nc_equalvelocity*bbopt$blended_nc_weights[2]+
               .self$streamnodeList[[i]]$depthdf$nc_wavgwp*bbopt$blended_nc_weights[3]+
               .self$streamnodeList[[i]]$depthdf$nc_wavgarea*bbopt$blended_nc_weights[4]+
-              .self$streamnodeList[[i]]$depthdf$nc_wavgconv*bbopt$blended_nc_weights[5]
+              .self$streamnodeList[[i]]$depthdf$nc_wavgconv*bbopt$blended_nc_weights[5]+
+              .self$streamnodeList[[i]]$depthdf$nc_invmanning*bbopt$blended_nc_weights[6]
           }
         }
       }
@@ -3186,7 +3192,7 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
                            "Froude", "Sf", "Sf_Avg", "Length_Effective", "Head_Loss", "Manning_Composite",
                            "K_Total_areaconv","K_Total_roughconv","K_Total_disconv",
                            "alpha_areaconv","alpha_roughconv","alpha_disconv",
-                           "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv")) {
+                           "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv","nc_invmanning")) {
                 ppht[[vv]] <- suppressWarnings(as.numeric(ppht[[vv]]))
               }
 
@@ -3396,7 +3402,7 @@ bb_boundaryconditionlist <- setRefClass("bb_boundaryconditionlist", field = list
 #' to add to options: method silent output
 #'
 #' blended_nc_weights: in the order of decreasing roughness (generally):
-#'  \code{c(nc_equalforce,nc_wavgarea,nc_wavgwp,nc_wavgconv,nc_equalvelocity)}
+#'  \code{c(nc_equalforce,nc_wavgarea,nc_wavgwp,nc_wavgconv,nc_equalvelocitync_invmanning)}
 #'
 #' blended_conveyance_weights: in order of decreasing conveyance:
 #' \code{c(discretized_conv, roughzone_conveyance, areaweighted_conveyance)}

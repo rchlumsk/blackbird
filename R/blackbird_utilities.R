@@ -2464,7 +2464,7 @@ bb_get_friction_methods <- function() {
 #' @export bb_get_composite_Manning_methods
 bb_get_composite_Manning_methods <- function() {
   return(c("equal_force","weighted_average_area","weighted_average_wetperimeter",
-           "weighted_average_conveyance","equal_velocity","blended_nc"))
+           "weighted_average_conveyance","equal_velocity","inverse_manning","blended_nc"))
 }
 
 #' @title Generate supported Cross-section conveyance methods
@@ -3518,6 +3518,7 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     preproc_table$nc_wavgwp          <- 0.0
     preproc_table$nc_wavgarea        <- 0.0
     preproc_table$nc_wavgconv        <- 0.0
+    preproc_table$nc_invmanning        <- 0.0
     return(preproc_table)
   }
 
@@ -3539,6 +3540,7 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
       preproc_table[j,]$nc_wavgwp  <- 0.035
       preproc_table[j,]$nc_wavgarea   <- 0.035
       preproc_table[j,]$nc_wavgconv   <- 0.035
+      preproc_table[j,]$nc_invmanning   <- 0.035
       next
     }
 
@@ -3748,6 +3750,9 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     # //} else if (manning_composite_method == "equal_velocity") {
     Aif_ni_prod_eqvel = Aif_rr * manningsn[ind2]^1.5
     nc_equalvelocity = finiteorzero( (sum(Aif_ni_prod_eqvel,na.rm=TRUE)/ Af)^(2.0/3.0) )
+
+    # //} else if (manning_composite_method == "inverse_manning") {
+    nc_inversemanning <- A1D * Rh1D^(2/3) / K1D
     # //}
 
     if (bbopt$Manning_composite_method == "equal_force") {
@@ -3760,6 +3765,8 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
       nc = nc_wavgconv
     } else if (bbopt$Manning_composite_method == "equal_velocity") {
       nc = nc_equalvelocity
+    } else if (bbopt$Manning_composite_method == "inverse_manning") {
+      nc = nc_inversemanning
     } else {
       warning("Unrecognized bbopt - Manning_composite_method. Using default (equal_force)");
       nc = nc_equalforce;
@@ -3768,12 +3775,27 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     # // std::cout << "nc calc ok" << "\n";
 
 
-    if (nc > max(manningsn[ind2],na.rm=TRUE) | nc < min(manningsn[ind2],na.rm=TRUE)) {
-      warning(sprintf("composite Mannings n is outside of bounds for catchment %s, setting to boundary value", sdf$nodeID[i]))
-      if (nc > max(manningsn[ind2],na.rm=TRUE)) {
-        nc <- max(manningsn[ind2],na.rm=TRUE)
-      } else if (nc < min(manningsn[ind2],na.rm=TRUE)) {
-        nc <- min(manningsn[ind2],na.rm=TRUE)
+    # if (nc > max(manningsn[ind2],na.rm=TRUE) | nc < min(manningsn[ind2],na.rm=TRUE)) {
+      # warning(sprintf("composite Mannings n is outside of bounds roughness inputs for catchment %s with value of %.2f, leaving as is", sdf$nodeID[i]))
+      # if (nc > max(manningsn[ind2],na.rm=TRUE)) {
+      #   nc <- max(manningsn[ind2],na.rm=TRUE)
+      # } else if (nc < min(manningsn[ind2],na.rm=TRUE)) {
+      #   nc <- min(manningsn[ind2],na.rm=TRUE)
+      # }
+    # }
+
+    if (nc > 0.2 | nc < 1e-3) {
+      warning(sprintf("composite Mannings n is outside of bounds for catchment %s, setting to default boundary value", sdf$nodeID[i]))
+      # if (nc > max(manningsn[ind2],na.rm=TRUE)) {
+      #   nc <- max(manningsn[ind2],na.rm=TRUE)
+      # } else if (nc < min(manningsn[ind2],na.rm=TRUE)) {
+      #   nc <- min(manningsn[ind2],na.rm=TRUE)
+      # }
+      if (nc > 0.2) {
+        nc <- 0.2
+      }
+      if (nc < 1e-3) {
+        nc <- 1e-3
       }
     }
 
@@ -3797,6 +3819,7 @@ bb_compute_preproc_hydprops = function(i, bbopt, preproc_table, a, sdf,
     preproc_table$nc_wavgwp[j] <- round(nc_wavgwp,3)
     preproc_table$nc_wavgarea[j] <- round(nc_wavgarea,3)
     preproc_table$nc_wavgconv[j] <- round(nc_wavgconv,3)
+    preproc_table$nc_invmanning[j] <- round(nc_inversemanning,3)
 
   }
   return(preproc_table)
@@ -3963,7 +3986,7 @@ bb_hydraulic_output_emptydf <- function(nrow=1) {
 #' @rdname bb_support
 bb_hydraulic_output_emptydf_propsonly <- function(nrow=1) {
   # empty data frame for hydraulic_output calculations
-  mm <- data.frame(matrix(NA,nrow=nrow,ncol=69))
+  mm <- data.frame(matrix(NA,nrow=nrow,ncol=70))
   # xxx to do - add nodetype here for checking nodetype while determining Leff to use
   colnames(mm) <- c("nodeID","reachID","downnodeID","upnodeID1","upnodeID2","stationname","station", "reach_length_DS",
                     "reach_length_US1","reach_length_US2",
@@ -3978,7 +4001,7 @@ bb_hydraulic_output_emptydf_propsonly <- function(nrow=1) {
                     "Length_Effective","Head_Loss","Manning_LOB","Manning_Main","Manning_ROB","Manning_Composite",
                     "K_Total_areaconv","K_Total_roughconv","K_Total_disconv",
                     "alpha_areaconv","alpha_roughconv","alpha_disconv",
-                    "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv")
+                    "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv","nc_invmanning")
   return(mm)
 }
 
