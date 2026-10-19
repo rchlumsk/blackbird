@@ -3048,6 +3048,10 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
 
       workingfolder <- bbopt$workingfolder
 
+      # cols to write out in the file
+      # drops a number of non-required columns
+      propcols <- bb_get_hydraulic_output_write_cols()
+
       if (is.null(modelname)) {
         temp <- unlist(strsplit(workingfolder,"/"))
         modelname <- temp[length(temp)]
@@ -3062,10 +3066,6 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
       }
       fc <- file(outputfile,open='w+')
       sdf <- .self$get_streamnodeList_as_dataframe()
-
-      # xxx update to write only the properties found in bb_hydraulic_output_emptydf_propsonly
-
-      # check that depthdf is not null before proceeding
 
       if (bbopt$use_preproc & !is.null(.self$streamnodeList[[1]]$depthdf)) {
         writeLines("\n:PreprocessedHydraulicTables", fc)
@@ -3083,16 +3083,40 @@ bb_geometry <- setRefClass("bb_geometry", field = list(geomname = "character",
             next
           }
 
-          # to do xxx - get the basic properties into the depthdf tables during preprocessing of tables
-          depthdf$nodeID <- .self$streamnodeList[[i]]$nodeID
-          depthdf$reachID <- .self$streamnodeList[[i]]$reachID
-          depthdf$downnodeID <- .self$streamnodeList[[i]]$downnodeID
-          depthdf$upnodeID1 <- .self$streamnodeList[[i]]$upnodeID1
-          depthdf$upnodeID2 <- .self$streamnodeList[[i]]$upnodeID2
+          depthdf_write <- depthdf[,propcols]
+          col_widths <- sapply(seq_along(depthdf_write), function(i) {
+            col <- depthdf_write[[i]]
+            max(nchar(names(depthdf_write)[i]),
+              max(nchar(
+                if (is.character(col)) {
+                  col
+                } else {
+                  sprintf("%.3f", as.numeric(col))
+                }),na.rm = TRUE)  ) + 2
+          })
 
-          writeLines(paste(c("    :Attributes",colnames(depthdf)),collapse="  "),fc)
-          for (j in 1:nrow(depthdf)) {
-            writeLines(paste(c("    ",depthdf[j,]), collapse="  "),fc)
+          names(col_widths) <- colnames(depthdf_write)
+          header <- mapply(
+          function(name, width) sprintf(paste0("%-", width, "s"), name),
+          colnames(depthdf_write), col_widths, SIMPLIFY = TRUE)
+          writeLines(paste0("    :Attributes  ", paste(header, collapse = "")),fc)
+
+          for (j in seq_len(nrow(depthdf_write))) {
+            # vals <- sprintf("%-20.3f", as.numeric(depthdf_write[j, ]))
+
+            vals <- mapply(
+              function(x, width) {
+                if (is.character(x)) {
+                  sprintf(paste0("%-", width, "s"), x)
+                # } else if (is.finite(x) && x == floor(x)) {  # comment out since no integers in depthdf
+                  # sprintf(paste0("%-", width, "d"), as.integer(x))
+                } else {
+                  sprintf(paste0("%-", width, ".3f"), as.numeric(x))
+                }
+              },
+              depthdf_write[j, ],col_widths,SIMPLIFY = TRUE)
+
+            writeLines(paste0("                 ", paste(vals, collapse = "")),fc)
           }
           writeLines("  :EndPreprocHydTable", fc)
         }

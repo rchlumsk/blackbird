@@ -4005,6 +4005,18 @@ bb_hydraulic_output_emptydf_propsonly <- function(nrow=1) {
   return(mm)
 }
 
+#' @rdname bb_support
+bb_get_hydraulic_output_write_cols <- function() {
+  # empty data frame for hydraulic_output calculations
+  # returns col names to use when writing property file
+  return(c( "Depth","WSL",
+            "HydDepth","TopWidth","K_Total","alpha","Area",
+            "HRadius","WetPerimeter","Length_Effective","Manning_Composite",
+            "K_Total_areaconv","K_Total_roughconv","K_Total_disconv",
+            "alpha_areaconv","alpha_roughconv","alpha_disconv",
+            "nc_equalforce","nc_equalvelocity","nc_wavgwp","nc_wavgarea","nc_wavgconv","nc_invmanning"))
+  return(mm)
+}
 
 #' @title Calculate planar areas from DEM
 #'

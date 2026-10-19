@@ -59,10 +59,37 @@ bb_write_model_files_cpp <- function(modelname="modelname",
 
   # streamnodes information
   writeLines("\n:Streamnodes", fc)
-  writeLines(paste(c("  :Attributes",colnames(sdf)),collapse="  "),fc)
+  # write header information with specific fixed widths
+  col_widths <- sapply(seq_along(sdf), function(i) {
+    col <- sdf[[i]]
+    max(nchar(names(sdf)[i]),
+      max(nchar(
+        if (is.character(col)) {
+          col
+        } else {
+          sprintf("%.3f", as.numeric(col))
+        }),na.rm = TRUE)  ) + 2
+  })
+  names(col_widths) <- colnames(sdf)
+  header <- mapply(
+    function(name, width) sprintf(paste0("%-", width, "s"), name),
+    colnames(sdf),    col_widths,     SIMPLIFY = TRUE
+  )
+  writeLines(paste0("    :Attributes  ", paste(header, collapse = "")),fc)
+
   for (i in 1:nrow(sdf)) {
-    writeLines(paste(c("    ",sdf[i,]), collapse="  "),fc)
-    # xxx add precision point control specific to different attributes
+       vals <- mapply(
+        function(x, width) {
+          if (is.character(x)) {
+            sprintf(paste0("%-", width, "s"), x)
+          } else if (is.finite(x) && x == floor(x)) {
+            sprintf(paste0("%-", width, "d"), as.integer(x))
+          } else {
+            sprintf(paste0("%-", width, ".3f"), as.numeric(x))
+          }
+        },
+        sdf[i, ],col_widths,SIMPLIFY = TRUE)
+    writeLines(paste0("                 ", paste(vals, collapse = "")),fc)
   }
   writeLines(":EndStreamnodes", fc)
 

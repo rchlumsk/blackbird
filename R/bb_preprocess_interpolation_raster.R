@@ -32,7 +32,7 @@
 bb_preprocess_interpolation_raster <- function(
                                bbopt=NULL,
                                bbgeom=NULL,
-                               overwrite=TRUE, return_raster=TRUE) {
+                               overwrite=TRUE, return_raster=FALSE) {
 
   if (is.null(bbopt) | "bb_options" %notin% class(bbopt)) {
     stop("bb_options class object bbopt is required")
