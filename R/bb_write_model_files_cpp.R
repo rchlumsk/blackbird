@@ -12,6 +12,7 @@
 #' @param bbmodel blackbird model object to write
 #' @param snconndf dataframe of connections between streamnodes with minimum hand values defined
 #' @param explicit_flows boolean whether to write in explicit flows
+#' @param include_optional_raster boolean whether to include the optional GIS files, such as the DEM (required for WSL raster writing)
 #'
 #' @return {returns \code{TRUE} if run successfully}
 #
@@ -22,7 +23,7 @@
 #' @importFrom raster raster writeRaster crs
 #' @export bb_write_model_files_cpp
 bb_write_model_files_cpp <- function(modelname="modelname",
-                                 bbmodel=NULL, snconndf=NULL, explicit_flows=FALSE) {
+                                 bbmodel=NULL, snconndf=NULL, explicit_flows=FALSE, include_optional_raster=TRUE) {
 
   if (is.null(bbmodel)) {stop("bbmodel is required")}
 
@@ -301,6 +302,11 @@ bb_write_model_files_cpp <- function(modelname="modelname",
   # bb_interp
   file.copy(bb_get_interpraster(bbopt$workingfolder, returnobject = FALSE),
             file.path(workingfolder,"model",bb_get_interpraster(workingfolder="GIS_files", returnobject=FALSE)))
+  # bb_dem
+  if (include_optional_raster){
+      file.copy(bb_get_demraster(bbopt$workingfolder, returnobject = FALSE),
+            file.path(workingfolder,"model",bb_get_demraster(workingfolder="GIS_files", returnobject=FALSE)))
+  }
 
   if (bbopt$use_dhand) {
     # bb_dhand layers
