@@ -1881,13 +1881,12 @@ bb_match_raster_extents_resample <- function(x=NULL, y=NULL, method="bilinear") 
   return(x)
 }
 
-#' @title Check extents of two rasters
+#' @title Check extents of two or more rasters
 #'
 #' @description
 #' Check the extents of two rasters
 #'
-#' @param x first raster you wish to check the extents
-#' @param y second raster
+#' @param x list of rasters you wish to check
 #'
 #' @return {\code{TRUE} if extents match, else \code{FALSE}}
 #'
@@ -1895,13 +1894,170 @@ bb_match_raster_extents_resample <- function(x=NULL, y=NULL, method="bilinear") 
 #'
 #' @importFrom terra ext
 #' @export bb_check_extents
-bb_check_extents <- function(x=NULL, y=NULL) {
+bb_check_extents <- function(x=NULL) {
 
-  if (ext(y) != ext(x)) {
-    return(FALSE)
-  } else {
+ exts <- lapply(x, terra::ext)
+
+  matches <- vapply(
+    exts,
+     function(e) all(e == exts[[1]]),
+    logical(1)
+  )
+
+  if (all(matches)) {
     return(TRUE)
   }
+
+  warning(
+    paste(
+      "Extent mismatch in objects:",
+      paste(which(!matches), collapse = ", ")
+    )
+  )
+
+  FALSE
+}
+
+#' @title Check resolution of two or more rasters
+#'
+#' @description
+#' Check the resolution of two rasters
+#'
+#' @param x list of rasters you wish to check
+#'
+#' @return {\code{TRUE} if resolutions match, else \code{FALSE}}
+#'
+#' @examples
+#'
+#' @importFrom terra res
+#' @export bb_check_extents_list
+bb_check_resolution <- function(x) {
+
+  ress <- lapply(x, terra::res)
+
+  matches <- vapply(
+    ress,
+    identical,
+    logical(1),
+    ress[[1]]
+  )
+
+  if (all(matches)) {
+    return(TRUE)
+  }
+
+  warning(
+    paste(
+      "Resolution mismatch in rasters:",
+      paste(which(!matches), collapse = ", ")
+    )
+  )
+
+  FALSE
+}
+
+#' @title Check projections of two or more objects
+#'
+#' @description
+#' Check the projections of two or more rasters or sf objects
+#'
+#' @param x list of objects you wish to check projections on
+#'
+#' @return {\code{TRUE} if extents match, else \code{FALSE}}
+#'
+#' @examples
+#'
+#' @importFrom terra crs
+#' @export bb_check_projections
+bb_check_projections <- function(x=NULL) {
+
+  if (!is.list(x)) {
+    stop("x must be a list of raster or vector objects")
+  }
+
+  crs_list <- lapply(x, function(obj) {
+    if (inherits(obj, c("SpatRaster", "SpatVector"))) {
+      terra::crs(obj, proj = TRUE)
+    } else if (inherits(obj, c("sf", "sfc"))) {
+      sf::st_crs(obj)$wkt
+    } else {
+      NA_character_
+    }
+  })
+
+  matches <- vapply(
+    crs_list,
+    identical,
+    logical(1),
+    crs_list[[1]]
+  )
+
+  if (all(matches)) {
+    return(TRUE)
+  }
+
+  warning(
+    paste(
+      "Projection mismatch in objects:",
+      paste(which(!matches), collapse = ", ")
+    )
+  )
+
+  return(FALSE)
+}
+
+#' @title Checks raster and returns rast
+#'
+#' @description
+#' Check the input and return a rast
+#'
+#' @param x raster or file path you wish to parse
+#'
+#' @return {\code{rr} a rast object from the \code{terra} package}
+#'
+#' @examples
+#'
+#' @importFrom terra rast
+#' @export bb_check_raster
+bb_check_raster <- function(x=NULL) {
+  if (is.character(x)) {
+
+    if (!file.exists(x)) {
+      stop("raster file path does not exist")
+    } else{
+      x <- rast(x)
+    }
+  } else if ("SpatRaster" %notin% class(x)) {
+      stop("raster input must be a SpatRaster object (from the terra package) or a file path to one")
+  }
+  return(x)
+}
+
+#' @title Checks shapefile and returns sf
+#'
+#' @description
+#' Check the input and return an sf
+#'
+#' @param x shapefile or similar object readable by \code{sf::read_sf} (e.g., gpkg) or an sf object
+#'
+#' @return {\code{ss} an sf object from the \code{sf} package}
+#'
+#' @examples
+#'
+#' @importFrom sf read_sf
+#' @export bb_check_shapefile
+bb_check_shapefile <- function(x=NULL) {
+  if (is.character(x)) {
+
+    if (!file.exists(x)) {
+      stop("shapefile file path does not exist")
+    } else{
+      x <- read_sf(x)
+    }
+  } else if ("sf" %notin% class(x)) {
+      stop("shapefile input must be a sf object (from the sf package) or a file path to one")
+  }
+  return(x)
 }
 
 #' @title Calculate distance from long/lat
@@ -2611,7 +2767,7 @@ bb_generate_flow_table <- function(geometry=NULL) {
 #' @export bb_get_fileinfo
 bb_get_fileinfo <- function(objectname=NULL) {
 
-  sdf <- data.frame(matrix(ncol=3,nrow=53,byrow=TRUE,
+  sdf <- data.frame(matrix(ncol=3,nrow=54,byrow=TRUE,
                            data=c(
                              c("rivershp",                    "bb_rivershp.shp","sf"),
                              c("demraster",                   "bb_dem.tif","SpatRaster"),
@@ -2650,6 +2806,7 @@ bb_get_fileinfo <- function(objectname=NULL) {
                              c("xsectionsfromstreamnodesshp", "bb_xsections_fromstreamnodes.shp","sf"),
                              c("catchmentsfromstreamnodesraster","bb_catchments_fromstreamnodes.tif","SpatRaster"),
                              c("manningsnraster",             "bb_manningsn.tif","SpatRaster"),
+                             c("outletshp",                   "bb_outlet.shp","sf"),
                              c("hydrivershp",                 "bb_hydcorrected_rivershp.shp","sf"),
                              c("slrivershp",                  "bb_slrivershp.shp","sf"),
                              c("catchmentlistrdata",          "bb_catchmentlist.rds","rds"),
@@ -3055,6 +3212,13 @@ bb_get_bboptionsrdata <- function(workingfolder=NULL, returnobject=TRUE) {
 bb_get_manningsnraster <- function(workingfolder=NULL, returnobject=TRUE) {
   objectname <- "manningsnraster"
   result <- bb_get_object(objectname, workingfolder, returnobject)
+  return(result)
+}
+
+#' @rdname bb_get
+bb_get_outletshp <- function(workingfolder=NULL, returnobject=TRUE, include_wf=TRUE) {
+  objectname <- "outletshp"
+  result <- bb_get_object(objectname, workingfolder, returnobject, include_wf)
   return(result)
 }
 
