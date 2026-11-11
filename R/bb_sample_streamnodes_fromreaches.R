@@ -150,7 +150,7 @@ bb_sample_streamnodes_fromreaches <- function(lineshp=NULL, bbopt=NULL, reachID_
   # linepoints <- linepoints[order(linepoints$pointid),]
 
   ## write streamnodes
-  streamnodes_file <- bb_get_streamnodesforcatchmentsshp(workingfolder = workingfolder, returnobject=FALSE)
+  streamnodes_file <- bb_get_streamnodesforcatchmentsshp(workingfolder = bbopt$workingfolder, returnobject=FALSE)
   # linepoints <- linepoints[,-(which(colnames(linepoints) %in% "flow_acc"))]
   if (file.exists(streamnodes_file)) {unlink(streamnodes_file)}
   write_sf(linepoints, streamnodes_file)

@@ -42,6 +42,7 @@
 #' @importFrom sf st_zm st_write st_length st_sf st_sfc st_crs st_write
 #' @importFrom exactextractr exact_extract
 #' @importFrom raster rasterize overlay writeRaster
+#' @importFrom sfnetwork as_sfnetwork
 #' @importFrom dplyr distinct
 #' @export bb_preprocess_hand
 bb_preprocess_hand <- function(dem=NULL, flowdir=NULL, rivershp=NULL,

@@ -317,7 +317,7 @@ bb_preprocess_catchments_sf <- function(streamnodes=NULL,
   # modify extents of catchments to match fine dem and other raster ----
   catchment_raster <- terra::rast(fn_catchment_ras)
   dem <- bb_get_demraster(workingfolder, returnobject = TRUE)
-  if (!bb_check_extents(dem, catchment_raster)) {
+  if (!bb_check_extents(list(dem, catchment_raster))) {
     # can also use bb_match_raster_extents which uses crop and extend, but doesnt seem to always work
     # note that we cannot resample bilinear this one, as we need to preserve the IDs to use nearest neighbour (near) method
     # catchment_raster <- bb_match_raster_extents(catchment_raster,dem)

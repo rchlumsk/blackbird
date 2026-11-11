@@ -623,7 +623,7 @@ catchment <- setRefClass("catchment",
     hand_raster <- raster::raster(.self$handraster)
     dem_raster <- raster::raster(.self$demraster)
 
-    if (!bb_check_extents(catchment_raster,dem_raster)) {
+    if (!bb_check_extents(list(catchment_raster,dem_raster))) {
       stop("Need to have raster extents match exactly for calc_min_elev")
     }
 
